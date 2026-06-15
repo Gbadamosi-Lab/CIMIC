@@ -15,6 +15,9 @@ library(data.table)
 # Load data
 master_induction_df <- fread("Datasets/NKI_SMC/nki_smc_master_induction_df.csv")
 
+# Create output directory if it doesn't exist
+dir.create("Results", showWarnings = FALSE)
+
 # Define the two clusters of interest and other parameters
 clusters_oi <- c("cluster1", "cluster2")
 slope_cutoff <- log2(1.5)
@@ -160,4 +163,4 @@ ind_graph <- ggplot(plot_data, aes(x = C2, y = C1)) +
 print(ind_graph)
 
 # Save the plot
-ggsave("fig2a_induction_scatter_plot.png", plot = ind_graph, width = 8, height = 8, dpi = 300)
+ggsave("Results/fig2a_induction_scatter_plot.png", plot = ind_graph, width = 12, height = 10, dpi = 300)

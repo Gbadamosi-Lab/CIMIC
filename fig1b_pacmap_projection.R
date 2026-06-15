@@ -18,6 +18,9 @@ library(ggrepel)
 # Load the dataset using fread for faster reading
 nki_smc_data <- fread("Datasets/NKI_SMC/nki_smc_combine_clustered_plot_df.csv")
 
+# Create output directory if it doesn't exist
+dir.create("Results", showWarnings = FALSE)
+
 # Check if the required columns exist
 required_columns <- c("sample_id", "PACMAP1", "PACMAP2", "cluster_assignments")
 if (!all(required_columns %in% colnames(nki_smc_data))) {
@@ -66,4 +69,4 @@ final_cluster_plot_pacmap <- ggplot(
   )
 
 # Save the plot
-ggsave("fig1b_pacmap_projection.png", plot = final_cluster_plot_pacmap, width = 8, height = 8, dpi = 300)
+ggsave("Results/fig1b_pacmap_projection.png", plot = final_cluster_plot_pacmap, width = 12, height = 10, dpi = 300)
