@@ -76,3 +76,50 @@ The primary input is a **clustering matrix**:
 dim(clustering_matrix)   # samples x genes
 rownames(clustering_matrix)  # sample IDs
 colnames(clustering_matrix)  # gene symbols
+
+source("CIMIC_Release_1.0.0.R")
+
+
+# Basic Usage
+results <- CIM_feature_selection_by_gene_set_pacmap(
+  clustering_matrix = your_delta_ge_matrix,  # samples x genes
+  clustering_alg    = "hc",                  # hierarchical clustering
+  max_k             = 5,                     # maximum clusters to test
+  CCP_iter          = 5000,                  # ConsensusClusterPlus iterations
+  adj_pval_thresh   = 0.05,                  # FDR threshold
+  max_pipeline_iter = 30,                    # max convergence iterations
+  seed              = 2024L,
+  clustering_metrics = c("pac", "silhouette_combined_avg", "item_cluster_consensus"),
+  filter_approach   = c("app_one", "app_two", "app_three"),
+  working_dir       = "path/to/your/output/directory"
+)
+
+# The function also returns a named list:
+results$iterated_by_gene_sets        # Approach 1 final gene set
+results$iterated_over_all_genes      # Approach 2 final gene set  
+results$iterated_use_final_gene_set_from_approach_one  # Approach 3 final gene set
+results$final_df_app_one             # Clustered samples dataframe (Approach 1)
+results$iter_log                     # Iteration log
+results$pacmap_settings              # PaCMAP parameters used
+results$removed_genes                # Genes removed during filtering
+```
+Results are saved to working_dir/CIM_states_results_{alg}_{input_type}_{approach}/ and include:
+
+| File | Description |
+|------|-------------|
+| `clustered_samples_app_one.csv` | Final cluster assignments with embeddings |
+| `final_cluster_metrics_summary.csv` | PAC, silhouette, CCS for each *k* |
+| `final_cluster_stability_metrics.csv` | Per-sample item consensus scores |
+| `clustering_gene_set.csv` | Final discriminatory gene set |
+| `iter_log_all_approaches.csv` | Gene counts at each iteration |
+| `final_pac_plot.png` | PAC curve across *k* |
+| `final_cdf_plot.png` | Consensus CDF curves |
+| `sil_plot.png` | Silhouette comparison across *k* |
+| `final_clustering_shown_on_pacmap_k-*.png` | PaCMAP visualization |
+| `final_clustering_shown_on_umap_k-*.png` | UMAP visualization |
+| `final_3D_PCA_k-*.html` | Interactive 3D PCA plot |
+
+
+# Contact
+Mohammed Gbadamosi — mgbadamosi@ufl.edu
+University of Florida
