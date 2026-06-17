@@ -1,290 +1,250 @@
+# =============================================================================
 # figure2f_2k.R
-# ------------------------------------------------------------
-# This script reproduces the Z‑score calculation for the cell‑death
-# programs (as defined in `all_gene_set_names_death`) and generates
-# faceted box‑plots similar to Figure 2F‑2K of the manuscript.
-# ------------------------------------------------------------
+# =============================================================================
+# Purpose:
+#   Create faceted box-plots of the five cell-death programs (Apoptosis,
+#   Ferroptosis, Necroptosis, Pyroptosis, PANoptosis) across CIMIC clusters.
+#   The script follows the same data sources, z-score preprocessing and
+#   aesthetic choices as figure2e_zscore_heatmap.R for consistency.
+#
+#   Two figures are produced, differing only in the significance test used for
+#   the stars (significance is based on RAW, uncorrected p-values):
+#     - Results/figure2f_2k_boxplots.png        (Wilcoxon rank-sum)
+#     - Results/figure2f_2k_boxplots_welch.png  (Welch's t-test)
+# =============================================================================
 
-# Load required packages ------------------------------------------------
-library(dplyr)
-library(tidyr)
-library(stringr)
-library(ggplot2)
-# (Add any additional packages needed for score calculation, e.g. readr, GSVA)
+# -------------------------------------------------------------------------
+# 1. Load required libraries (identical to figure2e)
+# -------------------------------------------------------------------------
+library(data.table)   # fast CSV reading
+library(dplyr)        # data manipulation
+library(tidyr)        # reshaping
+library(purrr)        # functional programming
+library(ggplot2)      # plotting
+library(stringr)      # string handling
+library(rstatix)      # statistical helpers
 
-# ------------------------------------------------------------
-# 1. Define cell‑death gene‑set names
-# ------------------------------------------------------------
-# Replace the placeholder vector with the actual gene‑set names used in the
-# manuscript (e.g. "Apoptosis", "Ferroptosis", "Necroptosis", …).
-all_gene_set_names_death <- c(
-  "Apoptosis",
-  "Ferroptosis",
-  "Necroptosis",
-  "Pyroptosis",
-  "PANoptosis"
-  # ... add any other cell‑death programs here
-)
+# -------------------------------------------------------------------------
+# 2. Load sample metadata (same source as figure2e)
+# -------------------------------------------------------------------------
+clustered_plot_df <- data.table::fread(
+  "Datasets/NKI_SMC/nki_smc_combine_clustered_plot_df.csv",
+  data.table = FALSE
+) %>% as.data.frame()
 
-# ------------------------------------------------------------
-# 2. Load data (expression matrix and sample metadata)
-# ------------------------------------------------------------
-# NOTE: Update the file paths to point to your own data files.
-expr_matrix <- readRDS("path/to/expression_matrix.rds")   # genes x samples
-metadata    <- readRDS("path/to/sample_metadata.rds")   # must contain `cimic_cluster`
-
-# ------------------------------------------------------------
-# 3. Compute program scores (placeholder implementation)
-# ------------------------------------------------------------
-# The original `figure_2e` script contains the logic for scoring each
-# program. Here we use a simple mean‑expression approach as a stand‑in.
-# Replace with the exact method (e.g., ssGSEA, AUCell) if required.
-
-compute_program_score <- function(gene_set) {
-  # `gene_set` – character vector of gene symbols belonging to the program
-  # Returns a numeric vector of scores (one per sample)
-  intersect_genes <- intersect(rownames(expr_matrix), gene_set)
-  if (length(intersect_genes) == 0) return(rep(NA, ncol(expr_matrix)))
-  colMeans(expr_matrix[intersect_genes, , drop = FALSE])
+# Align column name with figure2e conventions
+if ("cluster_assignments" %in% colnames(clustered_plot_df)) {
+  clustered_plot_df <- clustered_plot_df %>%
+    rename(CIMIC_Cluster = cluster_assignments)
 }
 
-# Create a tidy data frame of raw scores for each program
-program_scores_raw <- lapply(all_gene_set_names_death, function(prog) {
-  # In a real workflow, you would retrieve the gene list for `prog`
-  # For this template we assume a function `get_genes_for_program()` exists.
-  gene_list <- get_genes_for_program(prog)  # <-- user must define
-  tibble(
-    Program = prog,
-    Sample  = colnames(expr_matrix),
-    Score   = compute_program_score(gene_list)
+# -------------------------------------------------------------------------
+# 3. Identify gene-expression columns (same logic as figure2e)
+# -------------------------------------------------------------------------
+metadata_cols <- c(
+  "sample_id", "CIMIC_Cluster", "base_id", "PACMAP1", "PACMAP2",
+  "UMAP1", "UMAP2", "PC1", "PC2", "PC3", "V1"
+)
+gene_cols <- setdiff(colnames(clustered_plot_df), metadata_cols)
+
+message(sprintf("Loaded %d samples with %d gene expression columns",
+                nrow(clustered_plot_df), length(gene_cols)))
+
+# Create Results directory early (mirrors figure2e)
+dir.create("Results", showWarnings = FALSE)
+
+# -------------------------------------------------------------------------
+# 4. Z-score each gene across all samples (identical to figure2e)
+# -------------------------------------------------------------------------
+zscore_safe <- function(x) {
+  s <- sd(x, na.rm = TRUE)
+  m <- mean(x, na.rm = TRUE)
+  if (is.na(s) || s == 0) rep(0, length(x)) else (x - m) / s
+}
+df_z <- clustered_plot_df %>%
+  mutate(across(all_of(gene_cols), zscore_safe))
+
+# -------------------------------------------------------------------------
+# 5. Define the five cell-death programs (exactly as in figure2e)
+# -------------------------------------------------------------------------
+death_programs <- list(
+  Apoptosis = c(
+    "BAX", "BAK1", "BBC3", "PMAIP1", "BCL2L11",
+    "APAF1", "CASP9", "CASP3", "CASP7",
+    "FAS", "TNFRSF10B", "CASP8", "FADD", "BID",
+    "DIABLO", "CYCS", "TP53AIP1", "BAD", "BMF", "HRK"
+  ),
+  Necroptosis = c(
+    "RIPK1", "RIPK3", "MLKL", "ZBP1", "TICAM1",
+    "TNFRSF1A", "FADD", "CASP8"
+  ),
+  Pyroptosis = c(
+    "GSDME", "GSDMD", "CASP1", "CASP4", "CASP5",
+    "NLRP3", "AIM2", "PYCARD", "IL1B", "IL18",
+    "CASP3", "NLRC4"
+  ),
+  PANoptosis = c(
+    "ZBP1", "AIM2", "RIPK3", "RIPK1", "CASP8",
+    "CASP1", "FADD", "PYCARD", "IRF1"
+  ),
+  Ferroptosis = c(
+    "ACSL4", "LPCAT3", "TFRC", "SAT1", "PTGS2"
   )
-}) %>% bind_rows()
+)
 
-# Merge with metadata to obtain the CIMiC cluster assignment
-program_scores_all <- program_scores_raw %>%
-  left_join(metadata %>% select(Sample, cimic_cluster), by = "Sample") %>%
-  mutate(cimic_cluster = factor(cimic_cluster))
-
-# ------------------------------------------------------------
-# 4. Convert raw scores to Z‑scores per program
-# ------------------------------------------------------------
-program_scores_all <- program_scores_all %>%
-  group_by(Program) %>%
-  mutate(Score = scale(Score, center = TRUE, scale = TRUE)[, 1]) %>%
-  ungroup()
-
-# ------------------------------------------------------------
-# 5. Summary statistics and p‑values (same as in figure_2e)
-# ------------------------------------------------------------
-# 1. Summary stats per cluster
-program_summary <- program_scores_all %>%
-  group_by(cimic_cluster, Program) %>%
-  summarise(
-    mean_score   = mean(Score, na.rm = TRUE),
-    median_score = median(Score, na.rm = TRUE),
-    sd_score     = sd(Score, na.rm = TRUE),
-    n            = n(),
-    .groups = "drop"
+# -------------------------------------------------------------------------
+# 6. Compute program scores - mean Z-score per sample for each program
+# -------------------------------------------------------------------------
+score_program_z <- function(data, genes, prog_name) {
+  genes <- intersect(genes, colnames(data))
+  if (length(genes) == 0) {
+    return(data.frame(
+      sample_id = data$sample_id,
+      CIMIC_Cluster = data$CIMIC_Cluster,
+      Program = prog_name,
+      Score = rep(NA_real_, nrow(data))
+    ))
+  }
+  score_vec <- data %>%
+    dplyr::select(all_of(genes)) %>%
+    as.matrix() %>%
+    rowMeans(na.rm = TRUE)
+  data.frame(
+    sample_id = data$sample_id,
+    CIMIC_Cluster = data$CIMIC_Cluster,
+    Program = prog_name,
+    Score = score_vec
   )
+}
+program_scores_all <- purrr::imap_dfr(death_programs,
+                                      ~ score_program_z(df_z, .x, .y))
 
-# 2. P‑values per program (handles k = 2 or k >= 3)
-program_pvals <- program_scores_all %>%
-  group_by(Program) %>%
-  summarise(
-    n_clusters = n_distinct(cimic_cluster),
-    p_value = tryCatch({
-      if (n_clusters == 2) {
-        wilcox.test(Score ~ cimic_cluster)$p.value
-      } else if (n_clusters > 2) {
-        kruskal.test(Score ~ cimic_cluster)$p.value
-      } else {
-        NA_real_
-      }
-    }, error = function(e) NA_real_),
-    .groups = "drop"
-  ) %>%
-  mutate(FDR = p.adjust(p_value, method = "fdr"))
+# -------------------------------------------------------------------------
+# 7. Statistical testing (RAW, uncorrected p-values)
+# -------------------------------------------------------------------------
+# Significance stars are based on RAW p-values per program (no FDR correction).
+# Two test variants are produced:
+#   - "wilcox": Wilcoxon rank-sum (2 clusters); Kruskal-Wallis if >2 clusters
+#   - "welch" : Welch's t-test, unequal variance (2 clusters);
+#               one-way Welch ANOVA if >2 clusters
 
-# 3. Merge summary and p‑values
-program_summary_final <- program_summary %>%
-  left_join(program_pvals, by = "Program")
+# Map a raw p-value to a significance label.
+signif_label <- function(p) {
+  case_when(
+    is.na(p)      ~ "",
+    p <= 0.0001   ~ "****",
+    p <= 0.001    ~ "***",
+    p <= 0.01     ~ "**",
+    p <= 0.05     ~ "*",
+    TRUE          ~ ""
+  )
+}
 
-# ------------------------------------------------------------
-# 6. Prepare data for faceted box‑plots (only cell‑death programs)
-# ------------------------------------------------------------
-program_scores_plot_df <- program_scores_all %>%
-  filter(Program %in% paste0(all_gene_set_names_death, "_z")) %>%
-  mutate(
-    Program = Program %>%
-      str_remove_all("GOBP_|REACTOME_|HALLMARK_|_z") %>%
-      str_replace_all("_", " "),
-    Program = factor(
-      Program,
-      levels = unique(
-        paste0(all_gene_set_names_death, "_z") %>%
-          str_remove_all("GOBP_|REACTOME_|HALLMARK_|_z") %>%
-          str_replace_all("_", " ")
-      )
+# Compute per-program raw p-values for a given test type ("wilcox" or "welch").
+compute_stats <- function(scores, test = c("wilcox", "welch")) {
+  test <- match.arg(test)
+  scores %>%
+    group_by(Program) %>%
+    summarise(
+      n_clusters = n_distinct(CIMIC_Cluster),
+      p_val = tryCatch({
+        if (test == "wilcox") {
+          if (n_clusters == 2) wilcox.test(Score ~ CIMIC_Cluster)$p.value
+          else                 kruskal.test(Score ~ CIMIC_Cluster)$p.value
+        } else {
+          if (n_clusters == 2) t.test(Score ~ CIMIC_Cluster, var.equal = FALSE)$p.value
+          else                 oneway.test(Score ~ CIMIC_Cluster, var.equal = FALSE)$p.value
+        }
+      }, error = function(e) NA_real_),
+      .groups = "drop"
+    ) %>%
+    mutate(signif = signif_label(p_val))   # raw p-values, no FDR correction
+}
+
+# Ensure consistent ordering/labeling of clusters
+clustered_plot_df$CIMIC_Cluster <- factor(clustered_plot_df$CIMIC_Cluster)
+
+# -------------------------------------------------------------------------
+# 8. Faceted box-plot builder (publication-ready, matches Figure 2E style)
+# -------------------------------------------------------------------------
+make_boxplot <- function(stat_df, test_label) {
+  plot_df <- program_scores_all %>% left_join(stat_df, by = "Program")
+  plot_df$CIMIC_Cluster <- factor(plot_df$CIMIC_Cluster)
+
+  # Per-program star position: facets use free_y, so place each star just above
+  # that program's own maximum score (a single global max would push stars
+  # off-screen for low-scoring panels).
+  star_df <- program_scores_all %>%
+    group_by(Program) %>%
+    summarise(y = max(Score, na.rm = TRUE) * 1.05, .groups = "drop") %>%
+    left_join(stat_df, by = "Program")
+
+  ggplot(plot_df,
+         aes(x = CIMIC_Cluster, y = Score, fill = CIMIC_Cluster)) +
+    geom_boxplot(width = 0.6, outlier.shape = NA, alpha = 0.8) +
+    geom_jitter(width = 0.15, size = 1.5, alpha = 1) +
+    geom_text(data = star_df,
+              aes(x = 1.5, y = y, label = signif),
+              inherit.aes = FALSE, size = 6, fontface = "bold") +
+    facet_wrap(~ Program, scales = "free_y") +
+    labs(
+      title = sprintf("Cell-death program Z-scores by CIMIC cluster (%s, raw p)", test_label),
+      y = "Z-score of Program Activation",
+      x = NULL
+    ) +
+    # Salmon = Dys-CIM (cluster 1), Teal = Fun-CIM (cluster 2), matching figure panels
+    scale_fill_manual(values = c("1" = "#F8766D", "2" = "#00BFC4")) +
+    scale_x_discrete(labels = c("1" = "Dys-CIM", "2" = "Fun-CIM"),
+                     expand = expansion(add = c(0.5, 0.5))) +
+    theme_classic(base_size = 18) +
+    theme(
+      strip.background = element_blank(),
+      strip.text = element_text(face = "bold", size = 16),
+      axis.text.x = element_text(face = "bold", size = 28, colour = "black"),
+      axis.text.y = element_text(colour = "black", size = 14),
+      axis.title = element_text(colour = "black", size = 16),
+      legend.position = "none",
+      panel.grid = element_blank(),
+      panel.border = element_rect(linewidth = 1)
     )
-  )
+}
 
-# ------------------------------------------------------------
-# 7. Compute significance annotations
-# ------------------------------------------------------------
-pval_df_all <- program_scores_plot_df %>%
-  group_by(Program) %>%
-  summarise(
-    n_groups = n_distinct(cimic_cluster),
-    y.position = max(Score, na.rm = TRUE) * 1.1,
-    pval = tryCatch({
-      if (n_groups == 2) {
-        wilcox.test(Score ~ cimic_cluster)$p.value
-      } else if (n_groups > 2) {
-        kruskal.test(Score ~ cimic_cluster)$p.value
-      } else {
-        NA_real_
-      }
-    }, error = function(e) NA_real_),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    FDR = p.adjust(pval, method = "fdr"),
-    FDR.signif = case_when(
-      is.na(FDR)                ~ "FDR = NA",
-      FDR < 0.001              ~ "FDR < 0.001",
-      TRUE                     ~ paste0("FDR = ", signif(FDR, 3))
-    )
-  )
+# -------------------------------------------------------------------------
+# 9. Build both figures
+# -------------------------------------------------------------------------
+stat_wilcox <- compute_stats(program_scores_all, "wilcox")
+stat_welch  <- compute_stats(program_scores_all, "welch")
 
-# ------------------------------------------------------------
-# 8. Faceted box‑plot for ALL cell‑death programs
-# ------------------------------------------------------------
-p_all_programs_p <- ggplot(program_scores_plot_df, aes(x = cimic_cluster, y = Score, fill = cimic_cluster)) +
-  geom_boxplot(width = 0.6, outlier.shape = NA, alpha = 0.8) +
-  geom_jitter(width = 0.15, size = 1.5, alpha = 1) +
-  geom_text(
-    data = pval_df_all,
-    aes(x = 1.5, y = y.position, label = FDR.signif),
-    inherit.aes = FALSE,
-    size = 12,
-    fontface = "bold"
-  ) +
-  facet_wrap(~ Program, scales = "free_y") +
-  labs(
-    title = "Program scores by CIMiC cluster",
-    y = "Z-score of\nProgram Activation",
-    x = NULL
-  ) +
-  theme_bw(base_line_size = 2) +
-  theme(
-    strip.background = element_blank(),
-    strip.text = element_text(face = "bold", size = 18),
-    axis.text = element_text(colour = "black", size = 24),
-    axis.title.x = element_blank(),
-    axis.text.x = element_blank(),
-    axis.text.y = element_text(colour = "black", size = 24),
-    axis.title.y = element_text(colour = "black", size = 24),
-    legend.text = element_text(colour = "black", size = 24),
-    legend.title = element_text(colour = "black", size = 24),
-    legend.position = "top",
-    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
-    panel.grid = element_blank(),
-    panel.border = element_rect(linewidth = 2)
-  )
-print(p_all_programs_p)
+p_wilcox <- make_boxplot(stat_wilcox, "Wilcoxon")
+p_welch  <- make_boxplot(stat_welch,  "Welch's t-test")
 
-# ------------------------------------------------------------
-# 9. Faceted box‑plot for SIGNIFICANT programs only
-# ------------------------------------------------------------
-sig_programs <- pval_df_all %>%
-  filter(!is.na(FDR), FDR < 0.05) %>%
-  pull(Program)
+print(p_wilcox)
+print(p_welch)
 
-program_scores_plot_df_sig <- program_scores_plot_df %>%
-  filter(Program %in% sig_programs)
+# -------------------------------------------------------------------------
+# 10. Save figures (same folder as figure2e outputs)
+# -------------------------------------------------------------------------
+if (!dir.exists("Results")) dir.create("Results", showWarnings = FALSE)
 
-pval_df_sig <- pval_df_all %>%
-  filter(Program %in% sig_programs)
+ggsave(
+  filename = "Results/figure2f_2k_boxplots.png",
+  plot = p_wilcox,
+  width = 12,
+  height = 8,
+  dpi = 300,
+  bg = "white"
+)
 
-p_all_programs_sig <- ggplot(program_scores_plot_df_sig, aes(x = cimic_cluster, y = Score, fill = cimic_cluster)) +
-  geom_boxplot(width = 0.6, outlier.shape = NA, alpha = 0.8) +
-  geom_jitter(width = 0.15, size = 1.5, alpha = 1) +
-  geom_text(
-    data = pval_df_sig,
-    aes(x = 1.5, y = y.position, label = FDR.signif),
-    inherit.aes = FALSE,
-    size = 12,
-    fontface = "bold"
-  ) +
-  facet_wrap(~ Program, scales = "free_y") +
-  labs(
-    title = "Significant program scores by CIMiC cluster",
-    y = "Z-score of\nProgram Activation",
-    x = NULL
-  ) +
-  theme_bw(base_line_size = 2) +
-  theme(
-    strip.background = element_blank(),
-    strip.text = element_text(face = "bold", size = 18),
-    axis.text = element_text(colour = "black", size = 24),
-    axis.title.x = element_blank(),
-    axis.text.x = element_blank(),
-    axis.text.y = element_text(colour = "black", size = 24),
-    axis.title.y = element_text(colour = "black", size = 24),
-    legend.text = element_text(colour = "black", size = 24),
-    legend.title = element_text(colour = "black", size = 24),
-    legend.position = "top",
-    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
-    panel.grid = element_blank(),
-    panel.border = element_rect(linewidth = 2)
-  )
-print(p_all_programs_sig)
+ggsave(
+  filename = "Results/figure2f_2k_boxplots_welch.png",
+  plot = p_welch,
+  width = 12,
+  height = 8,
+  dpi = 300,
+  bg = "white"
+)
 
-# ------------------------------------------------------------
-# 10. Example: single‑program plot (e.g., Ferroptosis)
-# ------------------------------------------------------------
-single_gene_set <- "Ferroptosis"
-
-program_scores_plot_df_sig <- program_scores_plot_df %>%
-  filter(Program %in% single_gene_set) %>%
-  mutate(Program = str_wrap(Program, width = 20))
-
-pval_df_sig <- pval_df_all %>%
-  filter(Program %in% single_gene_set) %>%
-  mutate(Program = str_wrap(Program, width = 20))
-
-y_pos_one <- max(program_scores_plot_df_sig$Score, na.rm = TRUE) + 0.1
-
-p_program_individual <- ggplot(program_scores_plot_df_sig, aes(x = cimic_cluster, y = Score, fill = cimic_cluster)) +
-  geom_boxplot(width = 0.6, outlier.shape = NA, alpha = 0.8) +
-  geom_jitter(width = 0.15, size = 1.5, alpha = 1) +
-  geom_text(
-    data = pval_df_sig,
-    aes(x = 1.5, y = y_pos_one, label = FDR.signif),
-    inherit.aes = FALSE,
-    size = 15,
-    fontface = "bold"
-  ) +
-  facet_wrap(~ Program, scales = "free_y") +
-  labs(
-    y = "Z-score of\nProgram Activation",
-    x = NULL
-  ) +
-  theme_bw(base_line_size = 2) +
-  theme(
-    strip.background = element_blank(),
-    strip.text = element_text(face = "bold", size = 32),
-    axis.text = element_text(colour = "black", size = 24),
-    axis.title.x = element_blank(),
-    axis.text.x = element_text(colour = "black", size = 24, face = "bold"),
-    axis.text.y = element_text(colour = "black", size = 24, face = "bold"),
-    axis.title.y = element_text(colour = "black", size = 24, face = "bold"),
-    legend.text = element_text(colour = "black", size = 24),
-    legend.title = element_text(colour = "black", size = 24),
-    legend.position = "none",
-    panel.grid = element_blank(),
-    panel.border = element_rect(linewidth = 2)
-  )
-print(p_program_individual)
-
-# End of script ------------------------------------------------
+message("Wilcoxon raw p-values:")
+print(stat_wilcox)
+message("Welch's t-test raw p-values:")
+print(stat_welch)
