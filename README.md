@@ -77,7 +77,9 @@ dim(clustering_matrix)   # samples x genes
 rownames(clustering_matrix)  # sample IDs
 colnames(clustering_matrix)  # gene symbols
 
-source("CIMIC_Release_1.0.0.R")
+# Load the appropriate Limma implementation:
+# • For non‑replicate data → source("CIMIC_limma_1.0.0.R")
+# • For replicate‑aware data → source("CIMIC_limma_replicate_1.0.0.R")
 
 
 # Basic Usage
@@ -123,3 +125,32 @@ Results are saved to working_dir/CIM_states_results_{alg}_{input_type}_{approach
 # Contact
 Mohammed Gbadamosi — mgbadamosi@ufl.edu
 University of Florida
+
+### Main Limma Releases for CIMIC
+
+The CIMIC pipeline ships **two primary R scripts** that implement the **Limma**
+feature‑selection strategy.  These are the main releases used by the pipeline
+and are not merely optional variants.
+
+* **`CIMIC_limma_1.0.0.R`** – the standard Limma implementation.  It fits a
+   single moderated linear model across all genes using `lmFit` and `eBayes`
+   (without explicit handling of replicate samples).  Use this script when each
+   specimen is represented by a single column in the input matrix.
+
+* **`CIMIC_limma_replicate_1.0.0.R`** – the *replicate‑aware* Limma release.
+   It is designed for data sets that contain multiple technical or biological
+   replicates for the same cell line/specimen.  The script models the within‑
+   cell‑line correlation by calling `duplicateCorrelation` with a blocking
+   factor derived from the sample IDs (the part of the ID before the trailing
+   `_<rep>`).  The resulting correlation is passed to `lmFit` so that replicates
+   contribute to the degrees of freedom without being treated as independent
+   observations (avoiding pseudoreplication).
+
+Both releases share the same downstream workflow (consensus clustering,
+visualisation, etc.) and expose the same public function
+`CIM_feature_selection_by_gene_set_pacmap`.  The only difference lies in the
+*SWAP POINT* – the per‑gene feature‑test function – which is `cimic_select_features`
+in the replicate‑aware release and a simple limma fit in the standard release.
+
+Select the appropriate script based on whether your input matrix contains
+replicate columns (`*_initial_clustering_mat.csv`) or already‑averaged data.
