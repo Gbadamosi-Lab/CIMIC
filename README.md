@@ -31,6 +31,14 @@ Two main release scripts are provided:
 > the replicate-level matrices (e.g., `tnbc_cl_<drug>_initial_clustering_mat.csv`),
 > **not** pre-averaged matrices.
 
+> **Worked examples.** For a complete, runnable example of each release as used
+> in the manuscript, see
+> [Worked examples in this repository](#worked-examples-in-this-repository):
+> [nki_smc_combine_cimic.R](oncoimmunology_paper/Datasets/NKI_SMC/nki_smc_combine_cimic.R)
+> for patient data and
+> [tnbc_cl_cimic.R](oncoimmunology_paper/Datasets/TNBC_CL_Epirubicin/tnbc_cl_cimic.R)
+> for cell lines.
+
 ---
 
 ## How It Works
@@ -190,6 +198,56 @@ results <- CIM_feature_selection_by_gene_set_pacmap(
   working_dir        = "path/to/your/output/directory"
 )
 ```
+
+### Worked examples in this repository
+
+The two snippets above are generic. For complete, runnable examples of how CIMIC
+was actually applied in the manuscript, see these two scripts. Each is
+standalone: open it, edit the four paths at the top, and run it by itself.
+
+| Data type | Example script | Release it calls |
+|---|---|---|
+| **Patient data** | [nki_smc_combine_cimic.R](oncoimmunology_paper/Datasets/NKI_SMC/nki_smc_combine_cimic.R) | `CIMIC_limma_1.0.0.R` |
+| **Cell lines (replicates)** | [tnbc_cl_cimic.R](oncoimmunology_paper/Datasets/TNBC_CL_Epirubicin/tnbc_cl_cimic.R) | `CIMIC_limma_replicate_1.0.0.R` |
+
+**Patient data — [nki_smc_combine_cimic.R](oncoimmunology_paper/Datasets/NKI_SMC/nki_smc_combine_cimic.R)**
+
+Runs CIMIC on the combined NKI + SMC breast-cancer cohort, one pre/post pair per
+patient. Because there is a single measurement per patient, the primary release
+is used and no blocking factor is needed.
+
+- Input: `oncoimmunology_paper/Datasets/NKI_SMC/nki_smc_combine_initial_clustering_mat.csv`
+- Output: `oncoimmunology_paper/Results/nki_smc_cimic_results/`
+
+**Cell lines — [tnbc_cl_cimic.R](oncoimmunology_paper/Datasets/TNBC_CL_Epirubicin/tnbc_cl_cimic.R)**
+
+Runs CIMIC on the TNBC cell-line panel treated with epirubicin (9 cell lines x 3
+biological replicates). Because each cell line contributes several replicates,
+the replicate-aware release is used so `duplicateCorrelation` models the
+within-cell-line correlation instead of treating the replicates as independent
+samples.
+
+- Input: `oncoimmunology_paper/Datasets/TNBC_CL_Epirubicin/tnbc_cl_epi_initial_clustering_mat.csv`
+  (replicate-level, **not** pre-averaged)
+- Output: `oncoimmunology_paper/Results/tnbc_cl_epirubicin_cimic_results/`
+
+**The only difference between them.** Both scripts call the same entry point,
+`CIM_feature_selection_by_gene_set_pacmap()`, with identical settings —
+`clustering_alg = "hc"`, `max_k = 5`, `CCP_iter = 5000`,
+`adj_pval_thresh = 0.05`, `max_pipeline_iter = 50`, `seed = 2026L`, and all
+three filtering approaches. The single substantive difference is which release
+is sourced: the patient script sources `CIMIC_limma_1.0.0.R`, the cell-line
+script sources `CIMIC_limma_replicate_1.0.0.R`. That choice, driven purely by
+whether the data contain replicates, is the whole of what separates the two
+analyses.
+
+Each script writes the full result object to
+`<output_dir>/CIMIC_result.rds` alongside the per-approach output folders
+described in [Output Files](#output-files).
+
+> **Note on paths.** Both scripts currently hard-code absolute paths for
+> `script_dir`, `input_csv`, and `output_dir`. Edit those to match your machine
+> before running, or replace them with paths relative to the repository root.
 
 ### Return value
 
