@@ -1,0 +1,22 @@
+column,type,meaning
+scope,character,"Which combination of datasets this row was computed over. One of: ALL3_NKI.NEO.TNBCCL, NKI.NEO, NKI.TNBCCL, NEO.TNBCCL."
+cim,character,"The CIM the meta-test was directed TOWARD for this row (Fun or Dys). Every gene appears twice per scope+rho, once per CIM; the p-values differ because the one-sided p is taken toward this CIM."
+cim_class,character,"Per scope+rho verdict for the gene across BOTH cim rows, using the primary (Fisher) test: Fun_only / Dys_only / Both / none."
+rho_threshold,numeric,The |r_rb| cutoff a dataset had to clear to contribute to this gene. One of 0.3.
+gene,character,Gene symbol.
+n_scope_datasets,integer,"How many datasets are in this scope (3 for the all-three scope, 2 for pairs)."
+k_datasets,integer,Number of datasets in the scope where |r_rb| >= rho_threshold. MAGNITUDE ONLY -- this does NOT require significance within the dataset and does NOT require the datasets to agree on direction. Identical between the Fun and Dys rows of the same gene.
+all_datasets_contributed,character,"YES when k_datasets == n_scope_datasets, i.e. the gene cleared the rho cutoff in EVERY dataset of the scope. This is the 'require all three' filter."
+k_concordant,integer,"Of the k_datasets contributors, how many actually point toward `cim`. This is the DIRECTION-agreement count, as distinct from k_datasets."
+direction_concordant,character,"YES when k_concordant == k_datasets, i.e. every contributing dataset agrees on direction. Combine with all_datasets_contributed for 'same direction in all three'."
+<dataset>,character,"One column per dataset (nki_smc, neo, tnbc_cl). YES if that dataset contributed (|r_rb| >= rho_threshold)."
+<dataset>_dir,character,"One column per dataset. Which CIM that dataset's r_rb points to (Fun or Dys), or NA where the dataset did not contribute."
+fisher_stat,numeric,Fisher combined statistic: -2 * sum(log(p_one_sided)) over contributors.
+fisher_p,numeric,"PRIMARY meta p-value. Chi-square tail of fisher_stat on 2*k_datasets df. Raw, unadjusted."
+fisher_padj,numeric,"fisher_p, BH-adjusted ACROSS GENES within this scope+cim+rho. This is the single point of multiplicity control."
+fisher_sig,character,YES when fisher_padj < 0.05.
+stouffer_Z,numeric,"SECONDARY meta statistic. sqrt(n)-weighted sum of one-sided z toward `cim`, normalised by sqrt(sum of squared weights). Signed: positive favours `cim`, negative favours the other CIM. Cell-line weights use an effective n of 9 (cell lines, not samples)."
+stouffer_p,numeric,One-sided normal tail of stouffer_Z. Raw.
+stouffer_padj,numeric,"stouffer_p, BH-adjusted across genes within this scope+cim+rho."
+stouffer_sig,character,YES when stouffer_padj < 0.05.
+mean_abs_rrb,numeric,"Mean |r_rb| over the contributing datasets, rounded to 3 dp. Used as the effect-size axis in the volcano and as a ranking tie-break."

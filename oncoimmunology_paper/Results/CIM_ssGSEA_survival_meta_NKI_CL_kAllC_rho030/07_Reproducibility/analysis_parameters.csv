@@ -1,0 +1,83 @@
+parameter,value
+gene_set_source,cimic meta_results.csv
+signature_file,Results/cimic_meta_analysis/meta_results.csv
+signature_file_md5,1b97c893c2a8ab69d28f71b67ca6e15a
+expected_signature_file_md5,null
+meta_scope,ALL3_NKI.NEO.TNBCCL
+meta_rho_threshold,0.3
+meta_k_mode,k_all_concordant
+meta_k_mode_description,k_datasets == n_scope_datasets AND direction_concordant == YES (same direction in all)
+meta_require_fisher,TRUE
+meta_require_stouffer,TRUE
+meta_padj_threshold,0.05
+effective_meta_significance_rule,fisher_padj and stouffer_padj < 0.05
+meta_min_mean_abs_rrb,null
+meta_top_n_genes,null
+meta_rank_metric,stouffer_padj
+meta_ambiguous_gene_policy,drop
+ambiguous_genes_found,0
+effective_fun_cim_rule,cim == Fun | scope ALL3_NKI.NEO.TNBCCL | rho_threshold == 0.3 | k_all_concordant | fisher_padj and stouffer_padj < 0.05
+effective_dys_cim_rule,cim == Dys | scope ALL3_NKI.NEO.TNBCCL | rho_threshold == 0.3 | k_all_concordant | fisher_padj and stouffer_padj < 0.05
+expected_fun_cim_genes,null
+expected_dys_cim_genes,null
+selected_fun_cim_genes,550
+selected_dys_cim_genes,6
+cox_fdr_threshold,0.05
+cox_fdr_operator,<
+minimum_signature_coverage,0.7
+minimum_signature_genes,5
+duplicate_gene_method,max_variance
+missing_expression_gene_policy,drop_gene
+ssgsea_alpha,0.25
+ssgsea_normalize,TRUE
+ssgsea_min_size,1
+ssgsea_max_size,Inf
+bioc_parallel_workers,1
+score_parameterizations,continuous; median_split
+median_scope,cohort_signature
+median_tie_rule,high_includes_cutoff
+median_group_warning_fraction,0.2
+age_unit,5 years
+score_unit,1 within-cohort SD
+median_split_unit,High versus Low
+min_n_model,15
+min_events_model,5
+events_per_parameter_target,10
+enforce_events_per_parameter,FALSE
+sparse_factor_level_n,5
+alpha,0.05
+significance_metric,p_adjust_signature
+m2_covariates,age_5y; tumor_size; grade; clinical_subtype
+primary_adjusted_model,M2
+run_common_sample_sensitivity,TRUE
+metabric_chemo_only,TRUE
+scanb_chemo_only,TRUE
+metabric_chemo_column,null
+scanb_chemo_column,Chemo_Combined
+chemo_positive_values,true; 1; yes; y; treated; chemotherapy
+metabric_gene_start_col,39
+run_km_median_split,TRUE
+km_break_months,48
+metabric_km_ylim,0; 1
+scanb_km_ylim,0.75; 1
+metabric_km_pval_coord,0.15; 0.2
+scanb_km_pval_coord,0.15; 0.8
+km_width,7
+km_height,6.6
+km_dpi,600
+make_forest_plots,TRUE
+forest_model,M2
+forest_parameterization,continuous
+hr_axis_mode,manual
+hr_axis_min,0.62
+hr_axis_max,1.65
+hr_axis_breaks,0.65; 0.8; 1; 1.25; 1.6
+forest_width,7.2
+forest_height,3.8
+combined_forest_width,9
+score_qc_plot_width,7
+score_qc_plot_height,4.5
+figure_dpi,600
+seed,2026
+output_dir,D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/oncoimmunology_paper/Results/CIM_ssGSEA_survival_meta_NKI_CL_kAllC_rho030
+parameter_source,parameters defined in the .R script params list

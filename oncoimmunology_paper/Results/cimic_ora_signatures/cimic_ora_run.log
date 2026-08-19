@@ -1,0 +1,17 @@
+scope	k_mode	cim	rho	gene_set	n_genes	status
+ALL3_NKI.NEO.TNBCCL	k_all_concordant	Fun	0.3	all	550	OK
+ALL3_NKI.NEO.TNBCCL	k_all_concordant	Fun	0.3	top200	200	OK
+ALL3_NKI.NEO.TNBCCL	k_all_concordant	Dys	0.3	all	6	OK
+ALL3_NKI.NEO.TNBCCL	k_all_concordant	Dys	0.3	top200	6	SKIP_same_as_all
+NKI.NEO	k_all_concordant	Fun	0.3	all	3063	OK
+NKI.NEO	k_all_concordant	Fun	0.3	top200	200	OK
+NKI.NEO	k_all_concordant	Dys	0.3	all	22	OK
+NKI.NEO	k_all_concordant	Dys	0.3	top200	22	SKIP_same_as_all
+NKI.TNBCCL	k_all_concordant	Fun	0.3	all	1079	OK
+NKI.TNBCCL	k_all_concordant	Fun	0.3	top200	200	OK
+NKI.TNBCCL	k_all_concordant	Dys	0.3	all	402	OK
+NKI.TNBCCL	k_all_concordant	Dys	0.3	top200	200	OK
+NEO.TNBCCL	k_all_concordant	Fun	0.3	all	2366	OK
+NEO.TNBCCL	k_all_concordant	Fun	0.3	top200	200	OK
+NEO.TNBCCL	k_all_concordant	Dys	0.3	all	0	SKIP_too_few
+NEO.TNBCCL	k_all_concordant	Dys	0.3	top200	0	SKIP_same_as_all

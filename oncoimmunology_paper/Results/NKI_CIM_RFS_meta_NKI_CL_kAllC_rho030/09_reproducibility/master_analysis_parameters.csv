@@ -1,0 +1,28 @@
+parameter,value
+gene_set_source,cimic meta_results.csv
+survival_file,oncoimmunology_paper/Datasets/NKI_SMC/Clinical_data/NKI_survival_data.xlsx
+expression_file,oncoimmunology_paper/Datasets/NKI_SMC/nki_smc_combine_TPM_lognorm.csv
+signature_file,oncoimmunology_paper/Results/cimic_meta_analysis/meta_results.csv
+meta_scope,NKI.TNBCCL
+meta_rho_threshold,0.3
+meta_k_mode,k_all_concordant
+meta_require_fisher,TRUE
+meta_require_stouffer,TRUE
+meta_padj_threshold,0.05
+meta_min_mean_abs_rrb,null
+meta_top_n_genes,null
+meta_rank_metric,stouffer_padj
+meta_ambiguous_gene_policy,drop
+effective_meta_significance_stage,Meta significance (fisher_padj and stouffer_padj < 0.05)
+effective_dataset_support_stage,"Dataset support (k_all_concordant at rho >= 0.3, scope NKI.TNBCCL)"
+ambiguous_genes_found,0
+cox_fdr_threshold,0.05
+top_n_forest,15
+top_n_heatmap,50
+run_firth_sensitivity,TRUE
+run_ssgsea,TRUE
+ssgsea_alpha,0.25
+ssgsea_normalize_scores,TRUE
+ssgsea_minimum_genes,5
+ssgsea_minimum_coverage,0.5
+make_ssgsea_figure,TRUE

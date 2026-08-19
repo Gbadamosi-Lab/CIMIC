@@ -1,0 +1,121 @@
+cohort,endpoint_original,endpoint_harmonized,signature,model_id,variable,variable_type,level,reference_level,n_model,events_model,level_n,level_events,mean,sd,minimum,maximum
+METABRIC,OS,OS,Dys-CIM,M2,age_5y,continuous,NA,per 5-year increase,402,216,402,NA,10.104383084577114,2.199455988624845,4.386,17.247999999999998
+METABRIC,OS,OS,Dys-CIM,M2,tumor_size,categorical,≤20 mm,≤20 mm,402,216,118,58,NA,NA,NA,NA
+METABRIC,OS,OS,Dys-CIM,M2,tumor_size,categorical,21-50 mm,≤20 mm,402,216,239,132,NA,NA,NA,NA
+METABRIC,OS,OS,Dys-CIM,M2,tumor_size,categorical,>50 mm,≤20 mm,402,216,45,26,NA,NA,NA,NA
+METABRIC,OS,OS,Dys-CIM,M2,grade,categorical,1-2,1-2,402,216,82,36,NA,NA,NA,NA
+METABRIC,OS,OS,Dys-CIM,M2,grade,categorical,3,1-2,402,216,320,180,NA,NA,NA,NA
+METABRIC,OS,OS,Dys-CIM,M2,clinical_subtype,categorical,HR+/HER2-,HR+/HER2-,402,216,141,67,NA,NA,NA,NA
+METABRIC,OS,OS,Dys-CIM,M2,clinical_subtype,categorical,HR+/HER2+,HR+/HER2-,402,216,26,15,NA,NA,NA,NA
+METABRIC,OS,OS,Dys-CIM,M2,clinical_subtype,categorical,HR-/HER2+,HR+/HER2-,402,216,75,51,NA,NA,NA,NA
+METABRIC,OS,OS,Dys-CIM,M2,clinical_subtype,categorical,HR-/HER2-,HR+/HER2-,402,216,160,83,NA,NA,NA,NA
+METABRIC,OS,OS,Fun-CIM,M2,age_5y,continuous,NA,per 5-year increase,402,216,402,NA,10.104383084577114,2.199455988624845,4.386,17.247999999999998
+METABRIC,OS,OS,Fun-CIM,M2,tumor_size,categorical,≤20 mm,≤20 mm,402,216,118,58,NA,NA,NA,NA
+METABRIC,OS,OS,Fun-CIM,M2,tumor_size,categorical,21-50 mm,≤20 mm,402,216,239,132,NA,NA,NA,NA
+METABRIC,OS,OS,Fun-CIM,M2,tumor_size,categorical,>50 mm,≤20 mm,402,216,45,26,NA,NA,NA,NA
+METABRIC,OS,OS,Fun-CIM,M2,grade,categorical,1-2,1-2,402,216,82,36,NA,NA,NA,NA
+METABRIC,OS,OS,Fun-CIM,M2,grade,categorical,3,1-2,402,216,320,180,NA,NA,NA,NA
+METABRIC,OS,OS,Fun-CIM,M2,clinical_subtype,categorical,HR+/HER2-,HR+/HER2-,402,216,141,67,NA,NA,NA,NA
+METABRIC,OS,OS,Fun-CIM,M2,clinical_subtype,categorical,HR+/HER2+,HR+/HER2-,402,216,26,15,NA,NA,NA,NA
+METABRIC,OS,OS,Fun-CIM,M2,clinical_subtype,categorical,HR-/HER2+,HR+/HER2-,402,216,75,51,NA,NA,NA,NA
+METABRIC,OS,OS,Fun-CIM,M2,clinical_subtype,categorical,HR-/HER2-,HR+/HER2-,402,216,160,83,NA,NA,NA,NA
+METABRIC,DSS,DSS,Dys-CIM,M2,age_5y,continuous,NA,per 5-year increase,402,195,402,NA,10.104383084577114,2.199455988624845,4.386,17.247999999999998
+METABRIC,DSS,DSS,Dys-CIM,M2,tumor_size,categorical,≤20 mm,≤20 mm,402,195,118,52,NA,NA,NA,NA
+METABRIC,DSS,DSS,Dys-CIM,M2,tumor_size,categorical,21-50 mm,≤20 mm,402,195,239,119,NA,NA,NA,NA
+METABRIC,DSS,DSS,Dys-CIM,M2,tumor_size,categorical,>50 mm,≤20 mm,402,195,45,24,NA,NA,NA,NA
+METABRIC,DSS,DSS,Dys-CIM,M2,grade,categorical,1-2,1-2,402,195,82,33,NA,NA,NA,NA
+METABRIC,DSS,DSS,Dys-CIM,M2,grade,categorical,3,1-2,402,195,320,162,NA,NA,NA,NA
+METABRIC,DSS,DSS,Dys-CIM,M2,clinical_subtype,categorical,HR+/HER2-,HR+/HER2-,402,195,141,59,NA,NA,NA,NA
+METABRIC,DSS,DSS,Dys-CIM,M2,clinical_subtype,categorical,HR+/HER2+,HR+/HER2-,402,195,26,15,NA,NA,NA,NA
+METABRIC,DSS,DSS,Dys-CIM,M2,clinical_subtype,categorical,HR-/HER2+,HR+/HER2-,402,195,75,46,NA,NA,NA,NA
+METABRIC,DSS,DSS,Dys-CIM,M2,clinical_subtype,categorical,HR-/HER2-,HR+/HER2-,402,195,160,75,NA,NA,NA,NA
+METABRIC,DSS,DSS,Fun-CIM,M2,age_5y,continuous,NA,per 5-year increase,402,195,402,NA,10.104383084577114,2.199455988624845,4.386,17.247999999999998
+METABRIC,DSS,DSS,Fun-CIM,M2,tumor_size,categorical,≤20 mm,≤20 mm,402,195,118,52,NA,NA,NA,NA
+METABRIC,DSS,DSS,Fun-CIM,M2,tumor_size,categorical,21-50 mm,≤20 mm,402,195,239,119,NA,NA,NA,NA
+METABRIC,DSS,DSS,Fun-CIM,M2,tumor_size,categorical,>50 mm,≤20 mm,402,195,45,24,NA,NA,NA,NA
+METABRIC,DSS,DSS,Fun-CIM,M2,grade,categorical,1-2,1-2,402,195,82,33,NA,NA,NA,NA
+METABRIC,DSS,DSS,Fun-CIM,M2,grade,categorical,3,1-2,402,195,320,162,NA,NA,NA,NA
+METABRIC,DSS,DSS,Fun-CIM,M2,clinical_subtype,categorical,HR+/HER2-,HR+/HER2-,402,195,141,59,NA,NA,NA,NA
+METABRIC,DSS,DSS,Fun-CIM,M2,clinical_subtype,categorical,HR+/HER2+,HR+/HER2-,402,195,26,15,NA,NA,NA,NA
+METABRIC,DSS,DSS,Fun-CIM,M2,clinical_subtype,categorical,HR-/HER2+,HR+/HER2-,402,195,75,46,NA,NA,NA,NA
+METABRIC,DSS,DSS,Fun-CIM,M2,clinical_subtype,categorical,HR-/HER2-,HR+/HER2-,402,195,160,75,NA,NA,NA,NA
+METABRIC,RFI,RFI,Dys-CIM,M2,age_5y,continuous,NA,per 5-year increase,400,215,400,NA,10.102265,2.20174902900895,4.386,17.247999999999998
+METABRIC,RFI,RFI,Dys-CIM,M2,tumor_size,categorical,≤20 mm,≤20 mm,400,215,118,56,NA,NA,NA,NA
+METABRIC,RFI,RFI,Dys-CIM,M2,tumor_size,categorical,21-50 mm,≤20 mm,400,215,237,133,NA,NA,NA,NA
+METABRIC,RFI,RFI,Dys-CIM,M2,tumor_size,categorical,>50 mm,≤20 mm,400,215,45,26,NA,NA,NA,NA
+METABRIC,RFI,RFI,Dys-CIM,M2,grade,categorical,1-2,1-2,400,215,81,40,NA,NA,NA,NA
+METABRIC,RFI,RFI,Dys-CIM,M2,grade,categorical,3,1-2,400,215,319,175,NA,NA,NA,NA
+METABRIC,RFI,RFI,Dys-CIM,M2,clinical_subtype,categorical,HR+/HER2-,HR+/HER2-,400,215,140,75,NA,NA,NA,NA
+METABRIC,RFI,RFI,Dys-CIM,M2,clinical_subtype,categorical,HR+/HER2+,HR+/HER2-,400,215,26,15,NA,NA,NA,NA
+METABRIC,RFI,RFI,Dys-CIM,M2,clinical_subtype,categorical,HR-/HER2+,HR+/HER2-,400,215,74,45,NA,NA,NA,NA
+METABRIC,RFI,RFI,Dys-CIM,M2,clinical_subtype,categorical,HR-/HER2-,HR+/HER2-,400,215,160,80,NA,NA,NA,NA
+METABRIC,RFI,RFI,Fun-CIM,M2,age_5y,continuous,NA,per 5-year increase,400,215,400,NA,10.102265,2.20174902900895,4.386,17.247999999999998
+METABRIC,RFI,RFI,Fun-CIM,M2,tumor_size,categorical,≤20 mm,≤20 mm,400,215,118,56,NA,NA,NA,NA
+METABRIC,RFI,RFI,Fun-CIM,M2,tumor_size,categorical,21-50 mm,≤20 mm,400,215,237,133,NA,NA,NA,NA
+METABRIC,RFI,RFI,Fun-CIM,M2,tumor_size,categorical,>50 mm,≤20 mm,400,215,45,26,NA,NA,NA,NA
+METABRIC,RFI,RFI,Fun-CIM,M2,grade,categorical,1-2,1-2,400,215,81,40,NA,NA,NA,NA
+METABRIC,RFI,RFI,Fun-CIM,M2,grade,categorical,3,1-2,400,215,319,175,NA,NA,NA,NA
+METABRIC,RFI,RFI,Fun-CIM,M2,clinical_subtype,categorical,HR+/HER2-,HR+/HER2-,400,215,140,75,NA,NA,NA,NA
+METABRIC,RFI,RFI,Fun-CIM,M2,clinical_subtype,categorical,HR+/HER2+,HR+/HER2-,400,215,26,15,NA,NA,NA,NA
+METABRIC,RFI,RFI,Fun-CIM,M2,clinical_subtype,categorical,HR-/HER2+,HR+/HER2-,400,215,74,45,NA,NA,NA,NA
+METABRIC,RFI,RFI,Fun-CIM,M2,clinical_subtype,categorical,HR-/HER2-,HR+/HER2-,400,215,160,80,NA,NA,NA,NA
+SCANB,OS,OS,Dys-CIM,M2,age_5y,continuous,NA,per 5-year increase,2462,261,2462,NA,11.755077173030056,2.330766218284858,5,17
+SCANB,OS,OS,Dys-CIM,M2,tumor_size,categorical,≤20 mm,≤20 mm,2462,261,1414,109,NA,NA,NA,NA
+SCANB,OS,OS,Dys-CIM,M2,tumor_size,categorical,21-50 mm,≤20 mm,2462,261,962,132,NA,NA,NA,NA
+SCANB,OS,OS,Dys-CIM,M2,tumor_size,categorical,>50 mm,≤20 mm,2462,261,86,20,NA,NA,NA,NA
+SCANB,OS,OS,Dys-CIM,M2,grade,categorical,1-2,1-2,2462,261,1002,88,NA,NA,NA,NA
+SCANB,OS,OS,Dys-CIM,M2,grade,categorical,3,1-2,2462,261,1460,173,NA,NA,NA,NA
+SCANB,OS,OS,Dys-CIM,M2,clinical_subtype,categorical,HR+/HER2-,HR+/HER2-,2462,261,1454,125,NA,NA,NA,NA
+SCANB,OS,OS,Dys-CIM,M2,clinical_subtype,categorical,HR+/HER2+,HR+/HER2-,2462,261,419,33,NA,NA,NA,NA
+SCANB,OS,OS,Dys-CIM,M2,clinical_subtype,categorical,HR-/HER2+,HR+/HER2-,2462,261,173,23,NA,NA,NA,NA
+SCANB,OS,OS,Dys-CIM,M2,clinical_subtype,categorical,HR-/HER2-,HR+/HER2-,2462,261,416,80,NA,NA,NA,NA
+SCANB,OS,OS,Fun-CIM,M2,age_5y,continuous,NA,per 5-year increase,2462,261,2462,NA,11.755077173030056,2.330766218284858,5,17
+SCANB,OS,OS,Fun-CIM,M2,tumor_size,categorical,≤20 mm,≤20 mm,2462,261,1414,109,NA,NA,NA,NA
+SCANB,OS,OS,Fun-CIM,M2,tumor_size,categorical,21-50 mm,≤20 mm,2462,261,962,132,NA,NA,NA,NA
+SCANB,OS,OS,Fun-CIM,M2,tumor_size,categorical,>50 mm,≤20 mm,2462,261,86,20,NA,NA,NA,NA
+SCANB,OS,OS,Fun-CIM,M2,grade,categorical,1-2,1-2,2462,261,1002,88,NA,NA,NA,NA
+SCANB,OS,OS,Fun-CIM,M2,grade,categorical,3,1-2,2462,261,1460,173,NA,NA,NA,NA
+SCANB,OS,OS,Fun-CIM,M2,clinical_subtype,categorical,HR+/HER2-,HR+/HER2-,2462,261,1454,125,NA,NA,NA,NA
+SCANB,OS,OS,Fun-CIM,M2,clinical_subtype,categorical,HR+/HER2+,HR+/HER2-,2462,261,419,33,NA,NA,NA,NA
+SCANB,OS,OS,Fun-CIM,M2,clinical_subtype,categorical,HR-/HER2+,HR+/HER2-,2462,261,173,23,NA,NA,NA,NA
+SCANB,OS,OS,Fun-CIM,M2,clinical_subtype,categorical,HR-/HER2-,HR+/HER2-,2462,261,416,80,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Dys-CIM,M2,age_5y,continuous,NA,per 5-year increase,1867,177,1867,NA,11.647027316550616,2.294080060389424,5,17
+SCANB,DRFi,DRFi,Dys-CIM,M2,tumor_size,categorical,≤20 mm,≤20 mm,1867,177,1049,67,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Dys-CIM,M2,tumor_size,categorical,21-50 mm,≤20 mm,1867,177,759,94,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Dys-CIM,M2,tumor_size,categorical,>50 mm,≤20 mm,1867,177,59,16,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Dys-CIM,M2,grade,categorical,1-2,1-2,1867,177,739,51,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Dys-CIM,M2,grade,categorical,3,1-2,1867,177,1128,126,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Dys-CIM,M2,clinical_subtype,categorical,HR+/HER2-,HR+/HER2-,1867,177,1069,91,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Dys-CIM,M2,clinical_subtype,categorical,HR+/HER2+,HR+/HER2-,1867,177,332,26,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Dys-CIM,M2,clinical_subtype,categorical,HR-/HER2+,HR+/HER2-,1867,177,137,17,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Dys-CIM,M2,clinical_subtype,categorical,HR-/HER2-,HR+/HER2-,1867,177,329,43,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Fun-CIM,M2,age_5y,continuous,NA,per 5-year increase,1867,177,1867,NA,11.647027316550616,2.294080060389424,5,17
+SCANB,DRFi,DRFi,Fun-CIM,M2,tumor_size,categorical,≤20 mm,≤20 mm,1867,177,1049,67,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Fun-CIM,M2,tumor_size,categorical,21-50 mm,≤20 mm,1867,177,759,94,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Fun-CIM,M2,tumor_size,categorical,>50 mm,≤20 mm,1867,177,59,16,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Fun-CIM,M2,grade,categorical,1-2,1-2,1867,177,739,51,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Fun-CIM,M2,grade,categorical,3,1-2,1867,177,1128,126,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Fun-CIM,M2,clinical_subtype,categorical,HR+/HER2-,HR+/HER2-,1867,177,1069,91,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Fun-CIM,M2,clinical_subtype,categorical,HR+/HER2+,HR+/HER2-,1867,177,332,26,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Fun-CIM,M2,clinical_subtype,categorical,HR-/HER2+,HR+/HER2-,1867,177,137,17,NA,NA,NA,NA
+SCANB,DRFi,DRFi,Fun-CIM,M2,clinical_subtype,categorical,HR-/HER2-,HR+/HER2-,1867,177,329,43,NA,NA,NA,NA
+SCANB,RFi,RFI,Dys-CIM,M2,age_5y,continuous,NA,per 5-year increase,1866,214,1866,NA,11.646302250803858,2.2944810210111686,5,17
+SCANB,RFi,RFI,Dys-CIM,M2,tumor_size,categorical,≤20 mm,≤20 mm,1866,214,1048,90,NA,NA,NA,NA
+SCANB,RFi,RFI,Dys-CIM,M2,tumor_size,categorical,21-50 mm,≤20 mm,1866,214,759,108,NA,NA,NA,NA
+SCANB,RFi,RFI,Dys-CIM,M2,tumor_size,categorical,>50 mm,≤20 mm,1866,214,59,16,NA,NA,NA,NA
+SCANB,RFi,RFI,Dys-CIM,M2,grade,categorical,1-2,1-2,1866,214,738,65,NA,NA,NA,NA
+SCANB,RFi,RFI,Dys-CIM,M2,grade,categorical,3,1-2,1866,214,1128,149,NA,NA,NA,NA
+SCANB,RFi,RFI,Dys-CIM,M2,clinical_subtype,categorical,HR+/HER2-,HR+/HER2-,1866,214,1068,109,NA,NA,NA,NA
+SCANB,RFi,RFI,Dys-CIM,M2,clinical_subtype,categorical,HR+/HER2+,HR+/HER2-,1866,214,332,31,NA,NA,NA,NA
+SCANB,RFi,RFI,Dys-CIM,M2,clinical_subtype,categorical,HR-/HER2+,HR+/HER2-,1866,214,137,19,NA,NA,NA,NA
+SCANB,RFi,RFI,Dys-CIM,M2,clinical_subtype,categorical,HR-/HER2-,HR+/HER2-,1866,214,329,55,NA,NA,NA,NA
+SCANB,RFi,RFI,Fun-CIM,M2,age_5y,continuous,NA,per 5-year increase,1866,214,1866,NA,11.646302250803858,2.2944810210111686,5,17
+SCANB,RFi,RFI,Fun-CIM,M2,tumor_size,categorical,≤20 mm,≤20 mm,1866,214,1048,90,NA,NA,NA,NA
+SCANB,RFi,RFI,Fun-CIM,M2,tumor_size,categorical,21-50 mm,≤20 mm,1866,214,759,108,NA,NA,NA,NA
+SCANB,RFi,RFI,Fun-CIM,M2,tumor_size,categorical,>50 mm,≤20 mm,1866,214,59,16,NA,NA,NA,NA
+SCANB,RFi,RFI,Fun-CIM,M2,grade,categorical,1-2,1-2,1866,214,738,65,NA,NA,NA,NA
+SCANB,RFi,RFI,Fun-CIM,M2,grade,categorical,3,1-2,1866,214,1128,149,NA,NA,NA,NA
+SCANB,RFi,RFI,Fun-CIM,M2,clinical_subtype,categorical,HR+/HER2-,HR+/HER2-,1866,214,1068,109,NA,NA,NA,NA
+SCANB,RFi,RFI,Fun-CIM,M2,clinical_subtype,categorical,HR+/HER2+,HR+/HER2-,1866,214,332,31,NA,NA,NA,NA
+SCANB,RFi,RFI,Fun-CIM,M2,clinical_subtype,categorical,HR-/HER2+,HR+/HER2-,1866,214,137,19,NA,NA,NA,NA
+SCANB,RFi,RFI,Fun-CIM,M2,clinical_subtype,categorical,HR-/HER2-,HR+/HER2-,1866,214,329,55,NA,NA,NA,NA

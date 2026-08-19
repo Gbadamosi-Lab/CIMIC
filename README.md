@@ -12,6 +12,8 @@ The pipeline operates on within-patient delta gene expression values
 spanning 19 CIM-related pathways, capturing treatment-induced transcriptional
 responses while controlling for interpatient baseline differences.
 
+This GitHub repository serves as a location for obtaining the code for CIMIC and a repository for data and code used to make figures included in the original publication of CIMIC on Oncoimmunology.
+
 ---
 
 ## Pipeline Versions

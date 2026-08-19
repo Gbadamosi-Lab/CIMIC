@@ -1,0 +1,943 @@
+---
+title: "CIM ssGSEA Kaplan–Meier Plot Generator"
+author: "Gbadamosi Lab - IL/MG"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    theme: readable
+params:
+  data_dir: "C:/Users/yasmi/OneDrive - University of Florida/Gbadamosi Lab/Iasmim Lopes/01.CIMIC/CIM_ssGSEA"
+  scores_file: "CIM_ssGSEA_survival_adjusted_cont_median_corr060/02_Scores/sample_level_ssGSEA_scores.csv"
+  metabric_clinical_file: "data/METABRIC_clinical_data.xlsx"
+  scanb_clinical_file: "data/SCANB_clinical_harmonized_OS_DRFi_RFi.rds"
+  output_dir: "CIM_ssGSEA_KM_results"
+  run_batch: true
+  save_png: true
+  save_pdf: true
+  width: 6
+  height: 5
+  dpi: 600
+  break_x_by: 48
+  min_group_n: 5
+  min_events: 3
+  alpha: 0.05
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = TRUE, warning = FALSE,
+                     fig.width = 6, fig.height = 5, dpi = 600)
+options(stringsAsFactors = FALSE, scipen = 999)
+```
+
+# Purpose
+
+This standalone R Markdown document creates publication-quality median-split
+Kaplan–Meier plots from the Fun-CIM and Dys-CIM scores already calculated by
+the dedicated ssGSEA survival pipeline. It does **not** recalculate ssGSEA.
+
+The primary continuous-score Cox models remain the preferred inferential
+analysis. These median-split Kaplan–Meier analyses are secondary descriptive
+visualizations. For each cohort and signature, one median cutoff is calculated
+from all matched patients with a finite score before endpoint-specific survival
+missingness is removed. Consequently, a patient's High/Low group remains fixed
+across endpoints within the same cohort and signature.
+
+The central function is:
+
+```r
+plot_single_ssgsea_km(
+  signature = "Dys-CIM",
+  dataset = "SCANB",
+  endpoint = "RFi",
+  title = "Dys-CIM — SCAN-B RFI",
+  save_plot = TRUE,
+  display = TRUE,
+  width = 7,
+  height = 6.6,
+  dpi = 600
+)
+```
+
+# Packages and directories
+
+```{r packages-and-directories}
+required_packages <- c(
+  "dplyr", "tidyr", "purrr", "tibble", "stringr", "readr", "readxl",
+  "survival", "broom", "ggplot2", "survminer", "grid", "scales",
+  "openxlsx"
+)
+missing_packages <- required_packages[
+  !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
+]
+if (length(missing_packages)) {
+  stop(
+    "Missing required packages: ", paste(missing_packages, collapse = ", "),
+    ". Install them before knitting this document."
+  )
+}
+
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(tidyr)
+  library(purrr)
+  library(tibble)
+  library(stringr)
+  library(ggplot2)
+  library(survival)
+  library(survminer)
+})
+
+data_dir <- normalizePath(params$data_dir, winslash = "/", mustWork = FALSE)
+input_path <- function(x) {
+  if (grepl("^[A-Za-z]:|^/", x)) x else file.path(data_dir, x)
+}
+
+files <- c(
+  scores = input_path(params$scores_file),
+  metabric_clinical = input_path(params$metabric_clinical_file),
+  scanb_clinical = input_path(params$scanb_clinical_file)
+)
+missing_files <- names(files)[!file.exists(files)]
+if (length(missing_files)) {
+  stop(
+    "Missing input file(s): ",
+    paste(paste0(missing_files, " = ", files[missing_files]), collapse = "; ")
+  )
+}
+
+output_dir <- if (grepl("^[A-Za-z]:|^/", params$output_dir)) {
+  params$output_dir
+} else {
+  file.path(data_dir, params$output_dir)
+}
+
+subdirs <- setNames(
+  file.path(output_dir, c("01_QC", "02_Statistics", "03_Individual_KM",
+                          "04_Batch_Manifest", "05_Reproducibility")),
+  c("qc", "statistics", "plots", "batch", "reproducibility")
+)
+invisible(lapply(c(output_dir, subdirs), dir.create, recursive = TRUE,
+                 showWarnings = FALSE))
+
+input_manifest <- tibble(
+  input = names(files),
+  path = unname(files),
+  exists = file.exists(files),
+  size_bytes = unname(file.info(files)$size),
+  modified = format(unname(file.info(files)$mtime), "%Y-%m-%d %H:%M:%S")
+)
+readr::write_csv(input_manifest,
+                 file.path(subdirs["qc"], "input_file_manifest.csv"))
+```
+
+# Endpoint and aesthetic configuration
+
+```{r configuration}
+endpoint_config <- list(
+  METABRIC = tibble::tribble(
+    ~endpoint, ~time_col,     ~event_col,   ~y_label,
+    "OS",      "OS_MONTHS",  "OS_EVENT",   "OS probability",
+    "DSS",     "DSS_MONTHS", "DSS_EVENT",  "DSS probability",
+    "RFI",     "RFI_MONTHS", "RFI_EVENT",  "RFI probability"
+  ),
+  SCANB = tibble::tribble(
+    ~endpoint, ~time_col,      ~event_col,    ~y_label,
+    "OS",      "OS_MONTHS",   "OS_EVENT",    "OS probability",
+    "DRFi",    "DRFI_MONTHS", "DRFI_EVENT",  "DRFi probability",
+    "RFi",     "RFI_MONTHS",  "RFI_EVENT",   "RFI probability"
+  )
+)
+
+dataset_aesthetics <- tibble::tribble(
+  ~dataset,    ~display_name, ~y_min, ~y_max, ~pval_y,
+  "METABRIC", "METABRIC",     0.00,   1.00,    0.20,
+  "SCANB",    "SCAN-B",       0.75,   1.00,    0.80
+)
+
+group_palette <- c("Low" = "#0072B2", "High" = "#CC0000")
+
+analysis_parameters <- tibble(
+  parameter = c(
+    "group_definition", "median_population", "cox_contrast", "cox_ties",
+    "curve_test", "plot_width_inches", "plot_height_inches", "png_dpi",
+    "x_axis_break_months", "METABRIC_y_axis", "SCANB_y_axis"
+  ),
+  value = c(
+    "High >= median; Low < median",
+    "one fixed median per cohort and signature before endpoint filtering",
+    "High versus Low", "efron", "two-sided log-rank",
+    params$width, params$height, params$dpi, params$break_x_by,
+    "0.00 to 1.00", "0.75 to 1.00"
+  )
+)
+readr::write_csv(analysis_parameters,
+                 file.path(subdirs["qc"], "analysis_parameters.csv"))
+```
+
+# Helpers
+
+```{r helpers}
+safe_numeric <- function(x) suppressWarnings(as.numeric(as.character(x)))
+clean_id <- function(x) stringr::str_squish(as.character(x))
+
+get_first_available <- function(df, candidates, numeric = FALSE) {
+  hits <- candidates[candidates %in% names(df)]
+  if (!length(hits)) {
+    value <- if (numeric) rep(NA_real_, nrow(df)) else rep(NA_character_, nrow(df))
+    return(list(value = value, source = NA_character_))
+  }
+  usable <- vapply(hits, function(candidate) {
+    value <- df[[candidate]]
+    if (numeric) value <- safe_numeric(value)
+    any(!is.na(value) & str_squish(as.character(value)) != "")
+  }, logical(1))
+  source <- if (any(usable)) hits[which(usable)[1]] else hits[1]
+  value <- df[[source]]
+  if (numeric) value <- safe_numeric(value)
+  list(value = value, source = source)
+}
+
+standardize_event <- function(x, variable, dataset) {
+  if (is.logical(x)) return(as.integer(x))
+  z <- str_to_lower(str_squish(as.character(x)))
+  event_map <- c(
+    "0" = 0, "1" = 1, "false" = 0, "true" = 1, "no" = 0, "yes" = 1,
+    "alive" = 0, "living" = 0, "censored" = 0,
+    "dead" = 1, "deceased" = 1, "event" = 1,
+    "0:living" = 0, "1:deceased" = 1,
+    "0:disease free" = 0, "1:recurred" = 1,
+    "died of disease" = 1, "died of other causes" = 0
+  )
+  invalid <- setdiff(unique(z[!is.na(z) & z != ""]), names(event_map))
+  if (length(invalid)) {
+    stop(dataset, " ", variable, " has unmapped event values: ",
+         paste(invalid, collapse = ", "))
+  }
+  unname(event_map[z])
+}
+
+format_p_value <- function(p, digits = 4) {
+  if (!is.finite(p)) return("p = NA")
+  threshold <- 10^(-digits)
+  if (p < threshold) {
+    paste0("p < ", format(threshold, scientific = FALSE, nsmall = digits))
+  } else {
+    paste0("p = ", formatC(p, format = "f", digits = digits))
+  }
+}
+
+safe_file_tag <- function(x) {
+  x %>% str_replace_all("—", "-") %>%
+    str_replace_all("[^A-Za-z0-9._-]+", "_") %>%
+    str_replace_all("_+", "_") %>%
+    str_remove("^_") %>% str_remove("_$")
+}
+
+save_ggsurvplot <- function(km_object, filename, width, height, dpi, type) {
+  if (type == "png") {
+    grDevices::png(filename, width = width * dpi, height = height * dpi,
+                   units = "px", res = dpi, bg = "white")
+  } else if (type == "pdf") {
+    if (capabilities("cairo")) {
+      grDevices::cairo_pdf(filename, width = width, height = height,
+                           onefile = TRUE, bg = "white")
+    } else {
+      grDevices::pdf(filename, width = width, height = height,
+                     onefile = TRUE, bg = "white")
+    }
+  } else {
+    stop("Unknown output type: ", type)
+  }
+  on.exit(grDevices::dev.off(), add = TRUE)
+  print_ggsurvplot_clean(km_object, newpage = TRUE)
+  invisible(filename)
+}
+
+# survminer can emit a harmless ggplot2 warning about an unused colour label
+# when the composite plot includes a risk table. Muffle only that known warning;
+# all other warnings remain visible.
+print_ggsurvplot_clean <- function(km_object, newpage = TRUE) {
+  withCallingHandlers(
+    print(km_object, newpage = newpage),
+    warning = function(w) {
+      if (grepl("Ignoring unknown labels", conditionMessage(w), fixed = TRUE)) {
+        invokeRestart("muffleWarning")
+      }
+    }
+  )
+  invisible(km_object)
+}
+```
+
+# Read scores and clinical data
+
+```{r read-and-harmonize-inputs}
+scores_raw <- readr::read_csv(files[["scores"]], show_col_types = FALSE,
+                              name_repair = "minimal")
+required_score_columns <- c("cohort", "sample_id", "signature", "ssgsea_score")
+missing_score_columns <- setdiff(required_score_columns, names(scores_raw))
+if (length(missing_score_columns)) {
+  stop("The score file is missing: ", paste(missing_score_columns, collapse = ", "))
+}
+
+scores <- scores_raw %>% transmute(
+  dataset = case_when(
+    str_to_upper(str_squish(as.character(cohort))) == "METABRIC" ~ "METABRIC",
+    str_to_upper(str_replace_all(str_squish(as.character(cohort)), "-", "")) == "SCANB" ~ "SCANB",
+    TRUE ~ NA_character_
+  ),
+  sample_id = clean_id(sample_id),
+  signature = case_when(
+    str_to_lower(str_squish(as.character(signature))) == "fun-cim" ~ "Fun-CIM",
+    str_to_lower(str_squish(as.character(signature))) == "dys-cim" ~ "Dys-CIM",
+    TRUE ~ NA_character_
+  ),
+  ssgsea_score = safe_numeric(ssgsea_score),
+  cim_z = if ("cim_z" %in% names(scores_raw)) safe_numeric(scores_raw$cim_z) else NA_real_
+)
+
+invalid_scores <- scores %>% filter(
+  is.na(dataset) | is.na(signature) | is.na(sample_id) | sample_id == "" |
+    !is.finite(ssgsea_score)
+)
+if (nrow(invalid_scores)) {
+  readr::write_csv(invalid_scores,
+                   file.path(subdirs["qc"], "invalid_score_rows.csv"))
+  stop(nrow(invalid_scores), " invalid rows were found in the ssGSEA score file.")
+}
+
+duplicate_scores <- scores %>% count(dataset, sample_id, signature, name = "n") %>%
+  filter(n > 1L)
+readr::write_csv(duplicate_scores,
+                 file.path(subdirs["qc"], "duplicate_score_rows.csv"))
+if (nrow(duplicate_scores)) {
+  stop("Duplicate dataset × sample_id × signature score rows were detected.")
+}
+if (!all(c("Fun-CIM", "Dys-CIM") %in% unique(scores$signature))) {
+  stop("Both Fun-CIM and Dys-CIM must be present in the score file.")
+}
+
+metabric_raw <- readxl::read_xlsx(files[["metabric_clinical"]]) %>% as.data.frame()
+scanb_raw <- readRDS(files[["scanb_clinical"]]) %>% as.data.frame()
+
+harmonize_km_clinical <- function(df, dataset) {
+  id_candidates <- if (dataset == "METABRIC") {
+    c("PATIENT_ID", "Patient_ID", "patient_id")
+  } else {
+    c("GEX.assay", "GEX_assay", "sample_id")
+  }
+  id <- get_first_available(df, id_candidates)
+  if (is.na(id$source)) stop(dataset, " clinical ID column was not found.")
+
+  alias_map <- if (dataset == "METABRIC") {
+    list(
+      OS_MONTHS = c("OS_MONTHS", "OS_months"),
+      OS_EVENT = c("OS_EVENT", "OS_event", "OS_STATUS"),
+      DSS_MONTHS = c("DSS_MONTHS", "DSS_months"),
+      DSS_EVENT = c("DSS_EVENT", "DSS_event", "VITAL_STATUS"),
+      RFI_MONTHS = c("RFI_MONTHS", "RFI_months", "RFS_MONTHS"),
+      RFI_EVENT = c("RFI_EVENT", "RFI_event", "RFS_STATUS")
+    )
+  } else {
+    list(
+      OS_MONTHS = c("OS_MONTHS", "OS_months"),
+      OS_EVENT = c("OS_EVENT", "OS_event"),
+      DRFI_MONTHS = c("DRFI_MONTHS", "DRFi_months", "DRFI_months"),
+      DRFI_EVENT = c("DRFI_EVENT", "DRFi_event", "DRFI_event"),
+      RFI_MONTHS = c("RFI_MONTHS", "RFi_months", "RFI_months"),
+      RFI_EVENT = c("RFI_EVENT", "RFi_event", "RFI_event")
+    )
+  }
+
+  out <- tibble(sample_id = clean_id(id$value))
+  audit <- tibble(
+    dataset, harmonized_column = "sample_id", source_column = id$source,
+    nonmissing_n = sum(!is.na(out$sample_id) & out$sample_id != "")
+  )
+  for (target in names(alias_map)) {
+    found <- get_first_available(
+      df, alias_map[[target]], numeric = str_ends(target, "_MONTHS")
+    )
+    out[[target]] <- found$value
+    audit <- bind_rows(audit, tibble(
+      dataset, harmonized_column = target,
+      source_column = ifelse(is.na(found$source), "not_available", found$source),
+      nonmissing_n = sum(!is.na(found$value))
+    ))
+  }
+  for (event_col in names(alias_map)[str_ends(names(alias_map), "_EVENT")]) {
+    out[[event_col]] <- standardize_event(out[[event_col]], event_col, dataset)
+  }
+  if (any(is.na(out$sample_id) | out$sample_id == "") ||
+      anyDuplicated(out$sample_id)) {
+    duplicate_ids <- out %>% count(sample_id, name = "n") %>%
+      filter(is.na(sample_id) | sample_id == "" | n > 1L)
+    readr::write_csv(duplicate_ids,
+      file.path(subdirs["qc"], paste0(dataset, "_duplicate_clinical_ids.csv")))
+    stop(dataset, " clinical data contain duplicated sample IDs.")
+  }
+  attr(out, "source_audit") <- audit
+  out
+}
+
+metabric_clinical <- harmonize_km_clinical(metabric_raw, "METABRIC")
+scanb_clinical <- harmonize_km_clinical(scanb_raw, "SCANB")
+clinical_source_audit <- bind_rows(
+  attr(metabric_clinical, "source_audit"),
+  attr(scanb_clinical, "source_audit")
+)
+readr::write_csv(clinical_source_audit,
+                 file.path(subdirs["qc"], "clinical_source_audit.csv"))
+
+clinical_long <- bind_rows(
+  mutate(metabric_clinical, dataset = "METABRIC", .before = 1),
+  mutate(scanb_clinical, dataset = "SCANB", .before = 1)
+)
+
+score_clinical_long <- scores %>%
+  left_join(clinical_long, by = c("dataset", "sample_id"),
+            relationship = "many-to-one")
+
+join_audit <- scores %>% distinct(dataset, sample_id) %>%
+  left_join(clinical_long %>% distinct(dataset, sample_id) %>%
+              mutate(clinical_match = TRUE),
+            by = c("dataset", "sample_id"), relationship = "many-to-one") %>%
+  mutate(clinical_match = coalesce(clinical_match, FALSE))
+readr::write_csv(join_audit,
+                 file.path(subdirs["qc"], "score_clinical_join_audit.csv"))
+readr::write_csv(filter(join_audit, !clinical_match),
+                 file.path(subdirs["qc"], "unmatched_score_sample_ids.csv"))
+if (any(!join_audit$clinical_match)) {
+  stop(sum(!join_audit$clinical_match),
+       " score samples did not match their cohort-specific clinical file.")
+}
+
+median_cutoff_table <- score_clinical_long %>%
+  filter(is.finite(ssgsea_score)) %>%
+  group_by(dataset, signature) %>%
+  summarise(
+    median_cutoff = median(ssgsea_score),
+    score_n = n(),
+    score_min = min(ssgsea_score),
+    score_max = max(ssgsea_score),
+    .groups = "drop"
+  )
+readr::write_csv(median_cutoff_table,
+                 file.path(subdirs["qc"], "median_cutoffs.csv"))
+
+score_clinical_long <- score_clinical_long %>%
+  left_join(select(median_cutoff_table, dataset, signature, median_cutoff),
+            by = c("dataset", "signature"), relationship = "many-to-one") %>%
+  mutate(
+    median_group = if_else(ssgsea_score >= median_cutoff, "High", "Low"),
+    median_group = factor(median_group, levels = c("Low", "High"))
+  )
+```
+
+# Manual and batch KM function
+
+```{r km-function}
+plot_single_ssgsea_km <- function(
+    signature,
+    dataset,
+    endpoint,
+    title = NULL,
+    median_cutoff = NULL,
+    save_plot = TRUE,
+    display = TRUE,
+    output_dir = subdirs[["plots"]],
+    filename = NULL,
+    width = 6,
+    height = 5,
+    dpi = 600,
+    max_time = NULL,
+    break_x_by = params$break_x_by
+) {
+  signature <- match.arg(signature, c("Fun-CIM", "Dys-CIM"))
+  dataset <- match.arg(dataset, c("METABRIC", "SCANB"))
+
+  valid_endpoints <- endpoint_config[[dataset]]$endpoint
+  if (!endpoint %in% valid_endpoints) {
+    stop(
+      "Endpoint '", endpoint, "' is not available for ", dataset,
+      ". Valid options: ", paste(valid_endpoints, collapse = ", "), "."
+    )
+  }
+
+  endpoint_row <- endpoint_config[[dataset]] %>% filter(.data$endpoint == .env$endpoint)
+  aesthetic_row <- dataset_aesthetics %>% filter(.data$dataset == .env$dataset)
+  time_col <- endpoint_row$time_col[[1]]
+  event_col <- endpoint_row$event_col[[1]]
+
+  base_data <- score_clinical_long %>%
+    filter(.data$dataset == .env$dataset,
+           .data$signature == .env$signature)
+  if (!nrow(base_data)) stop("No score data were found for ", dataset, " ", signature, ".")
+
+  cutoff_source <- if (is.null(median_cutoff)) "Prespecified cohort-signature median" else "User-defined cutoff"
+  cutoff <- if (is.null(median_cutoff)) {
+    unique(base_data$median_cutoff)
+  } else {
+    as.numeric(median_cutoff)
+  }
+  if (length(cutoff) != 1L || !is.finite(cutoff)) {
+    stop("The selected median cutoff must be one finite numeric value.")
+  }
+
+  df_plot <- base_data %>% transmute(
+    dataset, sample_id, signature, ssgsea_score, cim_z,
+    time_var = safe_numeric(.data[[time_col]]),
+    event_var = standardize_event(.data[[event_col]], event_col, dataset),
+    ssGSEA_group = factor(
+      if_else(ssgsea_score >= cutoff, "High", "Low"),
+      levels = c("Low", "High")
+    )
+  ) %>% filter(
+    is.finite(time_var), time_var > 0,
+    event_var %in% c(0, 1),
+    is.finite(ssgsea_score), !is.na(ssGSEA_group)
+  )
+
+  group_counts <- df_plot %>% group_by(ssGSEA_group) %>% summarise(
+    n = n(), events = sum(event_var == 1), censored = sum(event_var == 0),
+    .groups = "drop"
+  ) %>% complete(
+    ssGSEA_group = factor(c("Low", "High"), levels = c("Low", "High")),
+    fill = list(n = 0L, events = 0L, censored = 0L)
+  )
+  if (any(group_counts$n < params$min_group_n)) {
+    stop("At least one ssGSEA group has fewer than ", params$min_group_n,
+         " endpoint-eligible patients.")
+  }
+  if (sum(group_counts$events) < params$min_events) {
+    stop("Fewer than ", params$min_events, " events are available for this plot.")
+  }
+
+  cox_model <- survival::coxph(
+    survival::Surv(time_var, event_var) ~ ssGSEA_group,
+    data = df_plot, ties = "efron", x = TRUE, y = TRUE
+  )
+  cox_result <- broom::tidy(cox_model, exponentiate = TRUE, conf.int = TRUE) %>%
+    filter(term == "ssGSEA_groupHigh")
+  if (nrow(cox_result) != 1L) stop("The High-versus-Low Cox coefficient was not estimable.")
+
+  logrank_model <- survival::survdiff(
+    survival::Surv(time_var, event_var) ~ ssGSEA_group,
+    data = df_plot, rho = 0
+  )
+  logrank_df <- length(logrank_model$n) - 1L
+  logrank_p <- stats::pchisq(logrank_model$chisq, df = logrank_df,
+                            lower.tail = FALSE)
+  km_fit <- survival::survfit(
+    survival::Surv(time_var, event_var) ~ ssGSEA_group,
+    data = df_plot
+  )
+
+  cox_p_text <- format_p_value(cox_result$p.value[[1]], digits = 4)
+  subtitle_text <- sprintf(
+    "Cox HR (High vs Low) = %.2f (%.2f–%.2f), Wald %s",
+    cox_result$estimate[[1]], cox_result$conf.low[[1]],
+    cox_result$conf.high[[1]], cox_p_text
+  )
+  logrank_text <- paste0("Log-rank ", format_p_value(logrank_p, digits = 4))
+
+  if (is.null(title)) {
+    title <- paste0(signature, " — ", aesthetic_row$display_name[[1]], " ", endpoint)
+  }
+  observed_max_time <- max(df_plot$time_var, na.rm = TRUE)
+  x_axis_max <- if (is.null(max_time)) observed_max_time else as.numeric(max_time)
+  if (length(x_axis_max) != 1L || !is.finite(x_axis_max) || x_axis_max <= 0) {
+    stop("max_time must be NULL or one positive finite number.")
+  }
+  pval_x <- 0.15 * x_axis_max
+
+  km_plot <- survminer::ggsurvplot(
+    km_fit,
+    data = df_plot,
+    palette = group_palette,
+    conf.int = FALSE,
+    censor.shape = "|",
+    censor.size = 2,
+    xlab = "Time (months)",
+    ylab = endpoint_row$y_label[[1]],
+    xlim = c(0, x_axis_max),
+    ylim = c(aesthetic_row$y_min[[1]], aesthetic_row$y_max[[1]]),
+    break.x.by = break_x_by,
+    pval = logrank_text,
+    pval.coord = c(pval_x, aesthetic_row$pval_y[[1]]),
+    pval.size = 5,
+    pval.fontface = "plain",
+    legend = "top",
+    legend.title = "ssGSEA group",
+    legend.labs = c("Low", "High"),
+    risk.table = TRUE,
+    risk.table.title = "Number at risk",
+    risk.table.height = 0.25,
+    risk.table.fontsize = 5,
+    risk.table.y.text.col = FALSE,
+    risk.table.y.text = TRUE,
+    tables.theme = theme_bw(base_size = 13) +
+      theme(
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(color = "black"),
+        axis.text.x = element_text(size = 12, face = "bold", color = "black"),
+        axis.text.y = element_text(size = 12, face = "bold", color = "black"),
+        axis.title.x = element_text(size = 12, face = "bold", color = "black"),
+        axis.title.y = element_blank(),
+        plot.title = element_text(face = "plain", size = 12, hjust = 0,
+                                  margin = margin(b = 2))
+      ),
+    ggtheme = theme_bw(base_size = 16) +
+      theme(
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(color = "black"),
+        axis.text = element_text(size = 13, color = "black", face = "bold"),
+        axis.title = element_text(size = 13, face = "bold", color = "black"),
+        legend.position = c(0.15, 0.90),
+        legend.justification = c(0, 1),
+        legend.direction = "horizontal",
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        legend.key = element_blank(),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 12, face = "bold"),
+        legend.spacing.x = grid::unit(0.2, "cm"),
+        legend.margin = margin(0, 0, 0, 0),
+        plot.title = element_text(face = "bold", size = 13, hjust = 0.5,
+                                  margin = margin(t = 2, b = 2)),
+        plot.subtitle = element_text(face = "bold", size = 11, hjust = 0.5,
+                                     color = "black", margin = margin(t = 2, b = 5)),
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 10)
+      )
+  )
+
+  km_plot$plot <- km_plot$plot + labs(title = title, subtitle = subtitle_text)
+  statistics <- tibble(
+    dataset, dataset_display = aesthetic_row$display_name[[1]], signature, endpoint,
+    cutoff = cutoff, cutoff_source = cutoff_source,
+    n = nrow(df_plot), events = sum(df_plot$event_var == 1),
+    low_n = group_counts$n[group_counts$ssGSEA_group == "Low"],
+    low_events = group_counts$events[group_counts$ssGSEA_group == "Low"],
+    high_n = group_counts$n[group_counts$ssGSEA_group == "High"],
+    high_events = group_counts$events[group_counts$ssGSEA_group == "High"],
+    cox_contrast = "High vs Low", hazard_ratio = cox_result$estimate[[1]],
+    conf_low = cox_result$conf.low[[1]], conf_high = cox_result$conf.high[[1]],
+    cox_wald_p = cox_result$p.value[[1]], logrank_chisq = unname(logrank_model$chisq),
+    logrank_df = logrank_df, logrank_p = logrank_p,
+    max_observed_time = observed_max_time, plotted_max_time = x_axis_max
+  )
+
+  saved_files <- character()
+  if (isTRUE(save_plot)) {
+    dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+    if (is.null(filename)) {
+      filename <- paste(signature, aesthetic_row$display_name[[1]], endpoint, sep = "__")
+    }
+    filename <- safe_file_tag(tools::file_path_sans_ext(basename(filename)))
+    plot_data_file <- file.path(output_dir, paste0(filename, "__plot_data.csv"))
+    statistics_file <- file.path(output_dir, paste0(filename, "__statistics.csv"))
+    readr::write_csv(df_plot, plot_data_file)
+    readr::write_csv(statistics, statistics_file)
+    saved_files <- c(saved_files, plot_data_file, statistics_file)
+
+    if (isTRUE(params$save_png)) {
+      png_file <- file.path(output_dir, paste0(filename, ".png"))
+      save_ggsurvplot(km_plot, png_file, width, height, dpi, "png")
+      saved_files <- c(saved_files, png_file)
+    }
+    if (isTRUE(params$save_pdf)) {
+      pdf_file <- file.path(output_dir, paste0(filename, ".pdf"))
+      save_ggsurvplot(km_plot, pdf_file, width, height, dpi, "pdf")
+      saved_files <- c(saved_files, pdf_file)
+    }
+  }
+
+  if (isTRUE(display)) print_ggsurvplot_clean(km_plot, newpage = TRUE)
+
+  invisible(list(
+    plot = km_plot,
+    survfit = km_fit,
+    cox_model = cox_model,
+    logrank_model = logrank_model,
+    plotting_data = df_plot,
+    group_counts = group_counts,
+    statistics = statistics,
+    median_cutoff = cutoff,
+    saved_files = saved_files
+  ))
+}
+```
+
+# Manual plotting
+
+The function can be called after running all chunks through `km-function`.
+Manual calls do not require rerunning the batch section.
+
+```{r manual-example, eval=FALSE}
+result <- plot_single_ssgsea_km(
+  signature = "Dys-CIM",
+  dataset = "SCANB",
+  endpoint = "RFi",
+  title = "Dys-CIM — SCAN-B RFI",
+  save_plot = TRUE,
+  display = TRUE,
+  width = 6,
+  height = 5,
+  dpi = 600
+)
+
+result$statistics
+result$median_cutoff
+result$group_counts
+```
+
+Additional examples:
+
+```{r more-manual-examples, eval=FALSE}
+# Fun-CIM, METABRIC overall survival
+plot_single_ssgsea_km(
+  signature = "Fun-CIM",
+  dataset = "METABRIC",
+  endpoint = "OS",
+  save_plot = TRUE,
+  display = TRUE
+)
+
+# Dys-CIM, METABRIC RFI, using the prespecified median
+plot_single_ssgsea_km(
+  signature = "Dys-CIM",
+  dataset = "METABRIC",
+  endpoint = "RFI",
+  title = "Dys-CIM — METABRIC RFI",
+  save_plot = TRUE,
+  display = TRUE
+)
+
+# Optional exploratory user-defined cutoff. The output table identifies this
+# explicitly as a user-defined cutoff.
+#plot_single_ssgsea_km(
+#  signature = "Fun-CIM",
+#  dataset = "SCANB",
+#  endpoint = "OS",
+#  median_cutoff = 0.42,
+#  title = "Fun-CIM — SCAN-B OS (exploratory cutoff)",
+ # save_plot = TRUE,
+ # display = TRUE
+#)
+```
+
+# Optional batch generation
+
+When `run_batch: true`, all 12 prespecified plots are generated using the same
+manual plotting function and the same fixed cohort–signature medians.
+
+```{r batch-generation}
+batch_design <- bind_rows(
+  tidyr::crossing(
+    dataset = "METABRIC",
+    signature = c("Fun-CIM", "Dys-CIM"),
+    endpoint = c("OS", "DSS", "RFI")
+  ),
+  tidyr::crossing(
+    dataset = "SCANB",
+    signature = c("Fun-CIM", "Dys-CIM"),
+    endpoint = c("OS", "DRFi", "RFi")
+  )
+) %>% mutate(
+  title = paste0(
+    signature, " — ", if_else(dataset == "SCANB", "SCAN-B", dataset), " ",
+    if_else(endpoint == "RFi", "RFI", endpoint)
+  )
+)
+
+batch_results <- list()
+batch_manifest <- batch_design %>% mutate(
+  status = "not_run", warning_text = NA_character_,
+  n = NA_integer_, events = NA_integer_, hazard_ratio = NA_real_,
+  conf_low = NA_real_, conf_high = NA_real_, cox_wald_p = NA_real_,
+  logrank_p = NA_real_, cutoff = NA_real_
+)
+
+if (isTRUE(params$run_batch)) {
+  for (i in seq_len(nrow(batch_design))) {
+    specification <- batch_design[i, ]
+    result <- tryCatch(
+      plot_single_ssgsea_km(
+        signature = specification$signature,
+        dataset = specification$dataset,
+        endpoint = specification$endpoint,
+        title = specification$title,
+        save_plot = TRUE,
+        display = FALSE,
+        width = params$width,
+        height = params$height,
+        dpi = params$dpi
+      ),
+      error = function(e) e
+    )
+    if (inherits(result, "error")) {
+      batch_manifest$status[i] <- "failed"
+      batch_manifest$warning_text[i] <- conditionMessage(result)
+    } else {
+      batch_results[[paste(specification$dataset, specification$signature,
+                           specification$endpoint, sep = "__")]] <- result
+      stat <- result$statistics
+      batch_manifest$status[i] <- "completed"
+      batch_manifest$n[i] <- stat$n
+      batch_manifest$events[i] <- stat$events
+      batch_manifest$hazard_ratio[i] <- stat$hazard_ratio
+      batch_manifest$conf_low[i] <- stat$conf_low
+      batch_manifest$conf_high[i] <- stat$conf_high
+      batch_manifest$cox_wald_p[i] <- stat$cox_wald_p
+      batch_manifest$logrank_p[i] <- stat$logrank_p
+      batch_manifest$cutoff[i] <- stat$cutoff
+    }
+  }
+}
+
+readr::write_csv(batch_design,
+                 file.path(subdirs["batch"], "batch_plot_design.csv"))
+readr::write_csv(batch_manifest,
+                 file.path(subdirs["batch"], "batch_plot_manifest.csv"))
+
+all_batch_statistics <- if (length(batch_results)) {
+  map_dfr(batch_results, "statistics")
+} else {
+  tibble()
+}
+readr::write_csv(all_batch_statistics,
+                 file.path(subdirs["statistics"], "all_KM_Cox_logrank_results.csv"))
+```
+
+# Endpoint eligibility and group audits
+
+```{r endpoint-audits}
+endpoint_eligibility <- map_dfr(names(endpoint_config), function(dataset) {
+  map_dfr(seq_len(nrow(endpoint_config[[dataset]])), function(i) {
+    endpoint_row <- endpoint_config[[dataset]][i, ]
+    map_dfr(c("Fun-CIM", "Dys-CIM"), function(signature) {
+      d <- score_clinical_long %>%
+        filter(.data$dataset == .env$dataset,
+               .data$signature == .env$signature) %>%
+        mutate(
+          time = safe_numeric(.data[[endpoint_row$time_col]]),
+          event = standardize_event(.data[[endpoint_row$event_col]],
+                                    endpoint_row$event_col, dataset),
+          eligible = is.finite(time) & time > 0 & event %in% c(0, 1)
+        )
+      d %>% group_by(median_group) %>% summarise(
+        dataset = .env$dataset,
+        signature = .env$signature,
+        endpoint = endpoint_row$endpoint[[1]],
+        assigned_n = n(), eligible_n = sum(eligible),
+        excluded_endpoint_n = sum(!eligible),
+        events = sum(event[eligible] == 1), .groups = "drop"
+      )
+    })
+  })
+})
+readr::write_csv(endpoint_eligibility,
+                 file.path(subdirs["qc"], "endpoint_group_eligibility.csv"))
+
+excluded_endpoint_samples <- map_dfr(names(endpoint_config), function(dataset) {
+  map_dfr(seq_len(nrow(endpoint_config[[dataset]])), function(i) {
+    endpoint_row <- endpoint_config[[dataset]][i, ]
+    score_clinical_long %>% filter(.data$dataset == .env$dataset) %>%
+      mutate(
+        time = safe_numeric(.data[[endpoint_row$time_col]]),
+        event = standardize_event(.data[[endpoint_row$event_col]],
+                                  endpoint_row$event_col, dataset),
+        endpoint = endpoint_row$endpoint,
+        exclusion_reason = case_when(
+          !is.finite(time) | time <= 0 ~ "missing_or_nonpositive_time",
+          !event %in% c(0, 1) | is.na(event) ~ "missing_or_invalid_event",
+          TRUE ~ NA_character_
+        )
+      ) %>% filter(!is.na(exclusion_reason)) %>%
+      select(dataset, signature, endpoint, sample_id, median_group,
+             exclusion_reason)
+  })
+})
+readr::write_csv(excluded_endpoint_samples,
+                 file.path(subdirs["qc"], "excluded_endpoint_samples.csv"))
+```
+
+# Workbook and reproducibility
+
+```{r workbook-and-reproducibility}
+workbook <- openxlsx::createWorkbook()
+add_table_sheet <- function(name, data) {
+  sheet <- substr(gsub("[\\[\\]*?/\\\\:]", "_", name), 1, 31)
+  openxlsx::addWorksheet(workbook, sheet)
+  if (!ncol(data)) data <- tibble(note = "No rows were generated")
+  openxlsx::writeDataTable(workbook, sheet, as.data.frame(data),
+                           tableStyle = "TableStyleMedium2")
+  openxlsx::freezePane(workbook, sheet, firstRow = TRUE)
+  if (ncol(data)) openxlsx::setColWidths(workbook, sheet,
+                                         cols = seq_len(ncol(data)), widths = "auto")
+}
+add_table_sheet("KM Cox logrank", all_batch_statistics)
+add_table_sheet("Batch manifest", batch_manifest)
+add_table_sheet("Median cutoffs", median_cutoff_table)
+add_table_sheet("Endpoint eligibility", endpoint_eligibility)
+add_table_sheet("Join audit", join_audit)
+add_table_sheet("Clinical sources", clinical_source_audit)
+add_table_sheet("Parameters", analysis_parameters)
+openxlsx::saveWorkbook(
+  workbook,
+  file.path(output_dir, "CIM_ssGSEA_KM_results.xlsx"),
+  overwrite = TRUE
+)
+
+writeLines(capture.output(sessionInfo()),
+           file.path(subdirs["reproducibility"], "sessionInfo.txt"))
+writeLines(capture.output(tools::md5sum(files)),
+           file.path(subdirs["reproducibility"], "input_md5_checksums.txt"))
+
+completion_check <- tibble(
+  check = c(
+    "both_cohorts_present", "both_signatures_present", "median_cutoffs_unique",
+    "all_score_samples_matched", "manual_function_available",
+    "batch_attempted_when_requested", "workbook_written"
+  ),
+  passed = c(
+    all(c("METABRIC", "SCANB") %in% unique(scores$dataset)),
+    all(c("Fun-CIM", "Dys-CIM") %in% unique(scores$signature)),
+    !anyDuplicated(median_cutoff_table[c("dataset", "signature")]),
+    all(join_audit$clinical_match),
+    exists("plot_single_ssgsea_km", mode = "function"),
+    !isTRUE(params$run_batch) ||
+      (nrow(batch_manifest) == 12L && all(batch_manifest$status == "completed")),
+    file.exists(file.path(output_dir, "CIM_ssGSEA_KM_results.xlsx"))
+  )
+)
+readr::write_csv(completion_check,
+                 file.path(subdirs["reproducibility"], "completion_check.csv"))
+if (any(!completion_check$passed)) {
+  warning("One or more completion checks failed; inspect completion_check.csv.")
+}
+```
+
+# Interpretation safeguards
+
+- `High` means an ssGSEA score greater than or equal to the fixed
+  cohort–signature median; `Low` means a score below that median.
+- The Cox subtitle reports the univariable High-versus-Low hazard ratio, 95%
+  confidence interval, and Wald p-value.
+- The annotation inside the curve panel reports the two-sided log-rank p-value.
+- The Cox model, log-rank test, KM curves, and risk table use the exact same
+  endpoint-eligible patient set.
+- The continuous ssGSEA Cox analysis should remain primary because median
+  splitting reduces information and statistical power.
+- METABRIC RFI and SCAN-B RFi are recurrence-focused contextual counterparts.
+  METABRIC DSS and SCAN-B DRFi are cohort-specific and should not be presented
+  as equivalent endpoints.
+- A manually supplied cutoff is exploratory and is labeled as user-defined in
+  its exported statistics table.

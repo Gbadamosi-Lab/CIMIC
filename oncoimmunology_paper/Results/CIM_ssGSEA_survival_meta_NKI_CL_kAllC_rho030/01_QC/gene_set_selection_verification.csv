@@ -1,0 +1,3 @@
+signature,selected_genes,minimum_selected_mean_abs_rrb,maximum_selected_fisher_padj,maximum_selected_stouffer_padj,minimum_k_datasets,minimum_k_concordant,genes_failing_fisher_rule,genes_failing_stouffer_rule,genes_failing_k_mode_rule,genes_failing_effect_floor_rule,genes_failing_runtime_rule
+Dys-CIM,6,0.369,0.0133919901773449,0.0261263325707986,3,3,0,0,0,0,0
+Fun-CIM,550,0.306,0.0140527427350443,0.00807963613307986,3,3,0,0,0,0,0

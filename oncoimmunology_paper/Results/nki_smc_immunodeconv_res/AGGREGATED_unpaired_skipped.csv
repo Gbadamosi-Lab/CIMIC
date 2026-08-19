@@ -1,0 +1,219 @@
+"analysis","Method","Cell_Type","Timepoint","reason","k","n_total","n_unique_value","min_cluster_n"
+"unpaired_dunn","CIBERSORTx","B cells memory","Biopsy","k<3_after_filter",2,36,18,11
+"unpaired_dunn","CIBERSORTx","B cells naive","Biopsy","k<3_after_filter",2,36,27,11
+"unpaired_dunn","CIBERSORTx","Dendritic cells activated","Biopsy","k<3_after_filter",2,36,4,11
+"unpaired_dunn","CIBERSORTx","Dendritic cells resting","Biopsy","k<3_after_filter",2,36,24,11
+"unpaired_global","CIBERSORTx","Eosinophils","Biopsy","no_variation",2,36,1,11
+"unpaired_dunn","CIBERSORTx","Eosinophils","Biopsy","k<3_after_filter",2,36,1,11
+"unpaired_dunn","CIBERSORTx","Macrophages M0","Biopsy","k<3_after_filter",2,36,28,11
+"unpaired_dunn","CIBERSORTx","Macrophages M1","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","CIBERSORTx","Macrophages M2","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","CIBERSORTx","Mast cells activated","Biopsy","k<3_after_filter",2,36,2,11
+"unpaired_dunn","CIBERSORTx","Mast cells resting","Biopsy","k<3_after_filter",2,36,35,11
+"unpaired_dunn","CIBERSORTx","Monocytes","Biopsy","k<3_after_filter",2,36,29,11
+"unpaired_dunn","CIBERSORTx","NK cells activated","Biopsy","k<3_after_filter",2,36,33,11
+"unpaired_dunn","CIBERSORTx","NK cells resting","Biopsy","k<3_after_filter",2,36,9,11
+"unpaired_dunn","CIBERSORTx","Neutrophils","Biopsy","k<3_after_filter",2,36,15,11
+"unpaired_dunn","CIBERSORTx","Plasma cells","Biopsy","k<3_after_filter",2,36,21,11
+"unpaired_dunn","CIBERSORTx","T cells CD4+ (general)","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","CIBERSORTx","T cells CD8+ (total)","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","CIBERSORTx","T cells follicular helper","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","CIBERSORTx","T cells gamma delta","Biopsy","k<3_after_filter",2,36,7,11
+"unpaired_dunn","CIBERSORTx","T cells regulatory (Tregs)","Biopsy","k<3_after_filter",2,36,32,11
+"unpaired_dunn","consensus_tme","B cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Cancer associated fibroblast","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Endothelial cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Eosinophil","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Macrophage","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Macrophage M1","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Macrophage M2","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Mast cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Monocyte","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Myeloid dendritic cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","NK cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Neutrophil","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","T cell CD4+","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","T cell CD8+","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","T cell gamma delta","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","T cell regulatory (Tregs)","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","cytotoxicity score","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","immune score","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","epic","B cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","epic","Cancer associated fibroblast","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","epic","Endothelial cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","epic","Macrophage","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","epic","NK cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","epic","T cell CD4+","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","epic","T cell CD8+","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","epic","uncharacterized cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","estimate","ESTIMATEScore","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","estimate","ImmuneScore","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","estimate","StromalScore","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","estimate","TumorPurity","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","B cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","Cancer associated fibroblast","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","Endothelial cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","Macrophage/Monocyte","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","Monocyte","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","Myeloid dendritic cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","NK cell","Biopsy","k<3_after_filter",2,36,32,11
+"unpaired_dunn","mcp_counter","Neutrophil","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","T cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","T cell CD8+","Biopsy","k<3_after_filter",2,36,35,11
+"unpaired_dunn","mcp_counter","cytotoxicity score","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","quantiseq","B cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","quantiseq","Macrophage M1","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","quantiseq","Macrophage M2","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","quantiseq","Monocyte","Biopsy","k<3_after_filter",2,36,16,11
+"unpaired_dunn","quantiseq","Myeloid dendritic cell","Biopsy","k<3_after_filter",2,36,27,11
+"unpaired_dunn","quantiseq","NK cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","quantiseq","Neutrophil","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","quantiseq","T cell CD4+ (non-regulatory)","Biopsy","k<3_after_filter",2,36,26,11
+"unpaired_dunn","quantiseq","T cell CD8+","Biopsy","k<3_after_filter",2,36,35,11
+"unpaired_dunn","quantiseq","T cell regulatory (Tregs)","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","quantiseq","uncharacterized cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","timer","B cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","timer","Macrophage","Biopsy","k<3_after_filter",2,36,28,11
+"unpaired_dunn","timer","Myeloid dendritic cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","timer","Neutrophil","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","timer","T cell CD4+","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","timer","T cell CD8+","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","xcell","B cell","Biopsy","k<3_after_filter",2,36,28,11
+"unpaired_dunn","xcell","B cell memory","Biopsy","k<3_after_filter",2,36,24,11
+"unpaired_dunn","xcell","B cell naive","Biopsy","k<3_after_filter",2,36,20,11
+"unpaired_dunn","xcell","B cell plasma","Biopsy","k<3_after_filter",2,36,31,11
+"unpaired_dunn","xcell","Cancer associated fibroblast","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","xcell","Class-switched memory B cell","Biopsy","k<3_after_filter",2,36,32,11
+"unpaired_dunn","xcell","Common lymphoid progenitor","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","xcell","Common myeloid progenitor","Biopsy","k<3_after_filter",2,36,26,11
+"unpaired_dunn","xcell","Endothelial cell","Biopsy","k<3_after_filter",2,36,34,11
+"unpaired_dunn","xcell","Eosinophil","Biopsy","k<3_after_filter",2,36,27,11
+"unpaired_dunn","xcell","Granulocyte-monocyte progenitor","Biopsy","k<3_after_filter",2,36,22,11
+"unpaired_dunn","xcell","Hematopoietic stem cell","Biopsy","k<3_after_filter",2,36,35,11
+"unpaired_dunn","xcell","Macrophage","Biopsy","k<3_after_filter",2,36,34,11
+"unpaired_dunn","xcell","Macrophage M1","Biopsy","k<3_after_filter",2,36,33,11
+"unpaired_dunn","xcell","Macrophage M2","Biopsy","k<3_after_filter",2,36,32,11
+"unpaired_dunn","xcell","Mast cell","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","xcell","Monocyte","Biopsy","k<3_after_filter",2,36,23,11
+"unpaired_dunn","xcell","Myeloid dendritic cell","Biopsy","k<3_after_filter",2,36,28,11
+"unpaired_dunn","xcell","Myeloid dendritic cell activated","Biopsy","k<3_after_filter",2,36,35,11
+"unpaired_dunn","xcell","NK cell","Biopsy","k<3_after_filter",2,36,19,11
+"unpaired_dunn","xcell","Neutrophil","Biopsy","k<3_after_filter",2,36,16,11
+"unpaired_dunn","xcell","Plasmacytoid dendritic cell","Biopsy","k<3_after_filter",2,36,26,11
+"unpaired_dunn","xcell","T cell CD4+ (aggregated)","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","xcell","T cell CD8+ (aggregated)","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","xcell","T cell NK","Biopsy","k<3_after_filter",2,36,28,11
+"unpaired_dunn","xcell","T cell gamma delta","Biopsy","k<3_after_filter",2,36,22,11
+"unpaired_dunn","xcell","T cell regulatory (Tregs)","Biopsy","k<3_after_filter",2,36,20,11
+"unpaired_dunn","xcell","immune score","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","xcell","microenvironment score","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","xcell","stroma score","Biopsy","k<3_after_filter",2,36,36,11
+"unpaired_dunn","CIBERSORTx","B cells memory","Surgery","k<3_after_filter",2,36,7,11
+"unpaired_dunn","CIBERSORTx","B cells naive","Surgery","k<3_after_filter",2,36,32,11
+"unpaired_dunn","CIBERSORTx","Dendritic cells activated","Surgery","k<3_after_filter",2,36,4,11
+"unpaired_dunn","CIBERSORTx","Dendritic cells resting","Surgery","k<3_after_filter",2,36,19,11
+"unpaired_global","CIBERSORTx","Eosinophils","Surgery","no_variation",2,36,1,11
+"unpaired_dunn","CIBERSORTx","Eosinophils","Surgery","k<3_after_filter",2,36,1,11
+"unpaired_dunn","CIBERSORTx","Macrophages M0","Surgery","k<3_after_filter",2,36,24,11
+"unpaired_dunn","CIBERSORTx","Macrophages M1","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","CIBERSORTx","Macrophages M2","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","CIBERSORTx","Mast cells activated","Surgery","k<3_after_filter",2,36,12,11
+"unpaired_dunn","CIBERSORTx","Mast cells resting","Surgery","k<3_after_filter",2,36,32,11
+"unpaired_dunn","CIBERSORTx","Monocytes","Surgery","k<3_after_filter",2,36,30,11
+"unpaired_dunn","CIBERSORTx","NK cells activated","Surgery","k<3_after_filter",2,36,35,11
+"unpaired_dunn","CIBERSORTx","NK cells resting","Surgery","k<3_after_filter",2,36,9,11
+"unpaired_dunn","CIBERSORTx","Neutrophils","Surgery","k<3_after_filter",2,36,21,11
+"unpaired_dunn","CIBERSORTx","Plasma cells","Surgery","k<3_after_filter",2,36,24,11
+"unpaired_dunn","CIBERSORTx","T cells CD4+ (general)","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","CIBERSORTx","T cells CD8+ (total)","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","CIBERSORTx","T cells follicular helper","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","CIBERSORTx","T cells gamma delta","Surgery","k<3_after_filter",2,36,6,11
+"unpaired_dunn","CIBERSORTx","T cells regulatory (Tregs)","Surgery","k<3_after_filter",2,36,20,11
+"unpaired_dunn","consensus_tme","B cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Cancer associated fibroblast","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Endothelial cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Eosinophil","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Macrophage","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Macrophage M1","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Macrophage M2","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Mast cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Monocyte","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Myeloid dendritic cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","NK cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","Neutrophil","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","T cell CD4+","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","T cell CD8+","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","T cell gamma delta","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","T cell regulatory (Tregs)","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","cytotoxicity score","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","consensus_tme","immune score","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","epic","B cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","epic","Cancer associated fibroblast","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","epic","Endothelial cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","epic","Macrophage","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","epic","NK cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","epic","T cell CD4+","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","epic","T cell CD8+","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","epic","uncharacterized cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","estimate","ESTIMATEScore","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","estimate","ImmuneScore","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","estimate","StromalScore","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","estimate","TumorPurity","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","B cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","Cancer associated fibroblast","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","Endothelial cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","Macrophage/Monocyte","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","Monocyte","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","Myeloid dendritic cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","NK cell","Surgery","k<3_after_filter",2,36,35,11
+"unpaired_dunn","mcp_counter","Neutrophil","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","T cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","T cell CD8+","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","mcp_counter","cytotoxicity score","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","quantiseq","B cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","quantiseq","Macrophage M1","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","quantiseq","Macrophage M2","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","quantiseq","Monocyte","Surgery","k<3_after_filter",2,36,10,11
+"unpaired_dunn","quantiseq","Myeloid dendritic cell","Surgery","k<3_after_filter",2,36,28,11
+"unpaired_dunn","quantiseq","NK cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","quantiseq","Neutrophil","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","quantiseq","T cell CD4+ (non-regulatory)","Surgery","k<3_after_filter",2,36,23,11
+"unpaired_dunn","quantiseq","T cell CD8+","Surgery","k<3_after_filter",2,36,34,11
+"unpaired_dunn","quantiseq","T cell regulatory (Tregs)","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","quantiseq","uncharacterized cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","timer","B cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","timer","Macrophage","Surgery","k<3_after_filter",2,36,33,11
+"unpaired_dunn","timer","Myeloid dendritic cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","timer","Neutrophil","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","timer","T cell CD4+","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","timer","T cell CD8+","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","xcell","B cell","Surgery","k<3_after_filter",2,36,21,11
+"unpaired_dunn","xcell","B cell memory","Surgery","k<3_after_filter",2,36,22,11
+"unpaired_dunn","xcell","B cell naive","Surgery","k<3_after_filter",2,36,18,11
+"unpaired_dunn","xcell","B cell plasma","Surgery","k<3_after_filter",2,36,29,11
+"unpaired_dunn","xcell","Cancer associated fibroblast","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","xcell","Class-switched memory B cell","Surgery","k<3_after_filter",2,36,28,11
+"unpaired_dunn","xcell","Common lymphoid progenitor","Surgery","k<3_after_filter",2,36,30,11
+"unpaired_dunn","xcell","Common myeloid progenitor","Surgery","k<3_after_filter",2,36,32,11
+"unpaired_dunn","xcell","Endothelial cell","Surgery","k<3_after_filter",2,36,31,11
+"unpaired_dunn","xcell","Eosinophil","Surgery","k<3_after_filter",2,36,26,11
+"unpaired_dunn","xcell","Granulocyte-monocyte progenitor","Surgery","k<3_after_filter",2,36,21,11
+"unpaired_dunn","xcell","Hematopoietic stem cell","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","xcell","Macrophage","Surgery","k<3_after_filter",2,36,31,11
+"unpaired_dunn","xcell","Macrophage M1","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","xcell","Macrophage M2","Surgery","k<3_after_filter",2,36,33,11
+"unpaired_dunn","xcell","Mast cell","Surgery","k<3_after_filter",2,36,33,11
+"unpaired_dunn","xcell","Monocyte","Surgery","k<3_after_filter",2,36,22,11
+"unpaired_dunn","xcell","Myeloid dendritic cell","Surgery","k<3_after_filter",2,36,31,11
+"unpaired_dunn","xcell","Myeloid dendritic cell activated","Surgery","k<3_after_filter",2,36,30,11
+"unpaired_dunn","xcell","NK cell","Surgery","k<3_after_filter",2,36,24,11
+"unpaired_dunn","xcell","Neutrophil","Surgery","k<3_after_filter",2,36,18,11
+"unpaired_dunn","xcell","Plasmacytoid dendritic cell","Surgery","k<3_after_filter",2,36,22,11
+"unpaired_dunn","xcell","T cell CD4+ (aggregated)","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","xcell","T cell CD8+ (aggregated)","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","xcell","T cell NK","Surgery","k<3_after_filter",2,36,27,11
+"unpaired_dunn","xcell","T cell gamma delta","Surgery","k<3_after_filter",2,36,18,11
+"unpaired_dunn","xcell","T cell regulatory (Tregs)","Surgery","k<3_after_filter",2,36,19,11
+"unpaired_dunn","xcell","immune score","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","xcell","microenvironment score","Surgery","k<3_after_filter",2,36,36,11
+"unpaired_dunn","xcell","stroma score","Surgery","k<3_after_filter",2,36,36,11

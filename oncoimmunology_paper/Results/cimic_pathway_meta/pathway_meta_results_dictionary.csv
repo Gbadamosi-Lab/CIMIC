@@ -1,0 +1,25 @@
+column,meaning
+family,zscore (19 immune/stress pathways) or icd (5 ICD programs + standalone).
+test,Fry (self-contained) or Camera (competitive). Run independently.
+scope,Which dataset combination was combined.
+GeneSet,Pathway / programme name as written by the upstream figure script.
+analysis_pool,AnalysisPool label carried from the input table.
+standalone,"TRUE for GOBP_INFLAMMATORY_CELL_APOPTOTIC_PROCESS in the icd family, which is tested outside the pooled family; its FDR columns are NA by design."
+n_scope_datasets,Datasets in the scope (3 or 2).
+k_datasets,Datasets that actually reported this pathway. Less than n_scope_datasets where a cohort did not measure it (the cell-line panel covers 13 of the 19 zscore pathways).
+all_datasets_present,YES when k_datasets == n_scope_datasets.
+meta_direction,"Sign of stouffer_Z: Dys-CIM if positive, Fun-CIM if negative."
+k_concordant,Datasets whose own Direction agrees with meta_direction.
+direction_concordant,YES when every contributing dataset agrees.
+n_up / n_down,Datasets reporting Up (Dys-CIM) / Down (Fun-CIM).
+stouffer_Z,"PRIMARY. sqrt(n)-weighted sum of signed one-sided z toward Dys-CIM, normalised by sqrt(sum of squared weights). Cell-line weight uses n = 9 cell lines."
+stouffer_p,Two-sided p for stouffer_Z: 2 * pnorm(-|Z|). Raw.
+stouffer_padj,"stouffer_p, BH-adjusted within family x test x scope."
+stouffer_sig,YES when stouffer_padj < 0.05.
+stouffer_sig_nominal,YES when the RAW stouffer_p < 0.05 (no FDR).
+fisher_stat / fisher_p,"SECONDARY, direction-agnostic. Fisher on the original TWO-SIDED p-values, so it does not require the datasets to agree on direction. Quote Stouffer when the two disagree."
+fisher_padj / fisher_sig,"As above, BH-adjusted within family x test x scope."
+min_p_dataset / max_p_dataset,Range of the contributing per-dataset p-values.
+mean_n_genes,Mean measured gene-set size across contributing datasets.
+datasets,Semicolon-separated contributing datasets.
+<dataset>_direction / <dataset>_p_value,That dataset's own Direction and two-sided p for this pathway and test.

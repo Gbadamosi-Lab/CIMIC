@@ -1,0 +1,2 @@
+cohort,row_id_overlap,col_id_overlap,row_gene_overlap,col_gene_overlap,selected_orientation
+SCANB,0,2462,509,0,genes_by_samples_transposed

@@ -1,0 +1,10 @@
+               D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/oncoimmunology_paper/Results/cimic_meta_analysis/meta_results.csv 
+                                                                                                                                              "1b97c893c2a8ab69d28f71b67ca6e15a" 
+              D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/oncoimmunology_paper/Datasets/METABRIC/METABRIC_clinical_data.xlsx 
+                                                                                                                                              "7042ebd4f5ce08ef53afb3793e18040c" 
+             D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/oncoimmunology_paper/Datasets/METABRIC/METABRIC_expression_data.csv 
+                                                                                                                                              "305c2a1d64d59c034dddd71df4dcaad7" 
+  D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/oncoimmunology_paper/Datasets/SCAN-B/SCANB_clinical_harmonized_OS_DRFi_RFi.rds 
+                                                                                                                                              "2b957115f78c4048fd028d0875a2b74f" 
+D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/oncoimmunology_paper/Datasets/SCAN-B/SCANB_expression_harmonized_OS_DRFi_RFi.rds 
+                                                                                                                                              "503be2fe5f679c023f1ce3eb43afa732" 

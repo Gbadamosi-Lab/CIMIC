@@ -1,0 +1,9 @@
+family,test,scope,n_pathways,n_all_present,n_stouffer_sig,n_stouffer_nominal,n_fisher_sig,n_concordant,n_toward_Dys,n_toward_Fun
+"icd","Fry","ALL3_NKI.NEO.TNBCCL",5,5,5,5,5,4,0,5
+"icd","Fry","NEO.TNBCCL",5,5,4,4,5,4,0,5
+"icd","Fry","NKI.NEO",5,5,5,5,5,5,0,5
+"icd","Fry","NKI.TNBCCL",5,5,3,3,3,4,0,5
+"zscore","Fry","ALL3_NKI.NEO.TNBCCL",19,13,16,16,19,14,1,18
+"zscore","Fry","NEO.TNBCCL",13,13,12,12,13,9,0,13
+"zscore","Fry","NKI.NEO",19,19,16,16,19,16,1,18
+"zscore","Fry","NKI.TNBCCL",13,13,7,8,7,10,3,10

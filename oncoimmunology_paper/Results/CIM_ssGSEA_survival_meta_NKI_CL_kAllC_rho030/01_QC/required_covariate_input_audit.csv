@@ -1,0 +1,9 @@
+cohort,variable,cohort_n,nonmissing_n,distinct_nonmissing,missing_n
+METABRIC,age_5y,412,412,393,0
+METABRIC,tumor_size,412,406,3,6
+METABRIC,grade,412,407,2,5
+METABRIC,clinical_subtype,412,412,4,0
+SCANB,age_5y,2462,2462,13,0
+SCANB,tumor_size,2462,2462,3,0
+SCANB,grade,2462,2462,2,0
+SCANB,clinical_subtype,2462,2462,4,0

@@ -1,0 +1,618 @@
+---
+title: "Baseline Individual Immune-Gene Analysis"
+author: "Gbadamosi Lab - IL/MG"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    code_folding: show
+params:
+  data_dir: "data"
+  expression_file: "nki_smc_combine_TPM_lognorm.csv"
+  cluster_file: "nki_smc_clusters.csv"
+  output_dir: "results/baseline_individual_genes"
+  save_individual_plots: true
+  random_seed: 20260815
+---
+
+# Purpose
+
+This R Markdown file compares prespecified individual immune features between
+baseline Dys-CIM and Fun-CIM tumors. `Avg_MHC1` is defined as the sample-level
+mean of `HLA-A`, `HLA-B`, and `HLA-C` log2(TPM + 1) expression. The contrast is
+Dys-CIM minus Fun-CIM. Benjamini-Hochberg adjustment is performed once across
+all unique features in `features_to_test`.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  dpi = 300
+)
+
+set.seed(params$random_seed)
+
+required_packages <- c(
+  "readr", "dplyr", "tidyr", "tibble", "stringr", "purrr",
+  "ggplot2", "patchwork", "rlang", "limma", "knitr"
+)
+
+missing_packages <- required_packages[
+  !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
+]
+
+if (length(missing_packages) > 0L) {
+  stop(
+    "Missing required R packages: ",
+    paste(missing_packages, collapse = ", "),
+    call. = FALSE
+  )
+}
+
+suppressPackageStartupMessages({
+  library(readr)
+  library(dplyr)
+  library(tidyr)
+  library(tibble)
+  library(stringr)
+  library(purrr)
+  library(ggplot2)
+  library(patchwork)
+  library(limma)
+})
+
+CIM_COLORS <- c(
+  "Dys-CIM" = "#F08A8A",
+  "Fun-CIM" = "#4DB6AC"
+)
+
+CIM_PLOT_LEVELS <- c("Dys-CIM", "Fun-CIM")
+CIM_MODEL_LEVELS <- c("Fun-CIM", "Dys-CIM")
+
+output_dir <- normalizePath(
+  params$output_dir,
+  winslash = "/",
+  mustWork = FALSE
+)
+
+table_dir <- file.path(output_dir, "tables")
+figure_dir <- file.path(output_dir, "figures")
+individual_plot_dir <- file.path(figure_dir, "individual")
+
+dir.create(table_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(figure_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(individual_plot_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+# Feature vector
+
+`HAVCR2` is listed once because it occurs in both source gene sets.
+
+```{r feature-vector}
+features_to_test <- c(
+  "CXCL13", "GZMB", "IFI6", "HLA-DRA", "HLA-DQA2", "HLA-DRB5",
+  "PRF1", "MX1", "HLA-DRB1", "CD82", "LY6E", "IFIT3", "ISG15",
+  "IFI44", "IFITM3", "ENTPD1", "OAS1", "IFI44L", "BST2", "GNLY",
+  "HAVCR2", "KRT86", "ALOX5AP", "CCL3", "IFI27", "PDCD1", "VSIR",
+  "LGALS9", "HHLA2", "CD274", "TIGIT", "LAG3", "PDCD1LG2", "BTLA",
+  "CTLA4", "VTCN1", "Avg_MHC1"
+)
+
+mhc1_component_genes <- c("HLA-A", "HLA-B", "HLA-C")
+
+stopifnot(
+  length(features_to_test) == 37L,
+  !anyDuplicated(features_to_test),
+  identical(tail(features_to_test, 1L), "Avg_MHC1")
+)
+
+knitr::kable(tibble(feature = features_to_test))
+```
+
+# Helper functions
+
+```{r helpers}
+resolve_input_file <- function(data_dir, filename) {
+  candidates <- unique(c(
+    file.path(data_dir, filename),
+    file.path(getwd(), data_dir, filename),
+    file.path(getwd(), filename)
+  ))
+
+  existing <- candidates[file.exists(candidates)]
+
+  if (length(existing) == 0L) {
+    stop(
+      "Could not find input file '", filename, "'. Checked: ",
+      paste(candidates, collapse = "; "),
+      call. = FALSE
+    )
+  }
+
+  normalizePath(existing[[1]], winslash = "/", mustWork = TRUE)
+}
+
+assert_true <- function(condition, message) {
+  if (!isTRUE(condition)) stop(message, call. = FALSE)
+}
+
+format_p <- function(p) {
+  if (is.na(p)) return("NA")
+  if (p < 0.001) return(format(p, scientific = TRUE, digits = 2))
+  sprintf("%.3f", p)
+}
+
+make_group_boxplot <- function(data, feature_name, p_value) {
+  plot_data <- data |>
+    mutate(CIM_group = factor(CIM_group, levels = CIM_PLOT_LEVELS))
+
+  observed_values <- plot_data$expression
+  observed_values <- observed_values[is.finite(observed_values)]
+
+  assert_true(
+    length(observed_values) > 0L,
+    paste0("No finite values were available for ", feature_name, ".")
+  )
+
+  y_min <- min(observed_values)
+  y_max <- max(observed_values)
+  y_range <- y_max - y_min
+
+  if (!is.finite(y_range) || y_range <= 0) {
+    y_range <- max(abs(c(y_min, y_max)), 1)
+  }
+
+  label_y <- y_max + 0.10 * y_range
+  upper_y <- y_max + 0.24 * y_range
+  lower_y <- y_min - 0.04 * y_range
+
+  ggplot(plot_data, aes(x = CIM_group, y = expression, fill = CIM_group)) +
+    geom_boxplot(
+      width = 0.58,
+      outlier.shape = NA,
+      linewidth = 0.35,
+      color = "black"
+    ) +
+    geom_jitter(
+      width = 0.10,
+      height = 0,
+      size = 1.35,
+      alpha = 0.90,
+      color = "black"
+    ) +
+    scale_fill_manual(values = CIM_COLORS, drop = FALSE) +
+    annotate(
+      "text",
+      x = 1.5,
+      y = label_y,
+      label = paste0("P = ", format_p(p_value)),
+      hjust = 0.5,
+      vjust = 0,
+      size = 3.0
+    ) +
+    coord_cartesian(ylim = c(lower_y, upper_y), clip = "off") +
+    labs(
+      title = feature_name,
+      x = NULL,
+      y = expression("Baseline log"[2] * "(TPM + 1)")
+    ) +
+    theme_classic(base_size = 9) +
+    theme(
+      plot.title = element_text(face = "bold", hjust = 0.5, size = 10),
+      axis.title.y = element_text(size = 9),
+      axis.text.x = element_text(size = 8, color = "black"),
+      axis.text.y = element_text(size = 8, color = "black"),
+      axis.line = element_line(linewidth = 0.35),
+      axis.ticks = element_line(linewidth = 0.35),
+      legend.position = "none",
+      plot.margin = margin(9, 8, 5.5, 5.5)
+    )
+}
+
+save_plot_pdf_png <- function(plot_object, output_stem, width, height, dpi = 600) {
+  ggsave(
+    paste0(output_stem, ".pdf"),
+    plot_object,
+    width = width,
+    height = height,
+    units = "in",
+    bg = "white"
+  )
+
+  ggsave(
+    paste0(output_stem, ".png"),
+    plot_object,
+    width = width,
+    height = height,
+    units = "in",
+    dpi = dpi,
+    bg = "white"
+  )
+}
+```
+
+# Import data
+
+```{r import-data}
+expression_path <- resolve_input_file(params$data_dir, params$expression_file)
+cluster_path <- resolve_input_file(params$data_dir, params$cluster_file)
+
+expression_raw <- readr::read_csv(
+  expression_path,
+  show_col_types = FALSE,
+  name_repair = "minimal"
+)
+
+sample_columns <- names(expression_raw)[
+  stringr::str_detect(names(expression_raw), "_(B|S)$")
+]
+
+assert_true(
+  length(sample_columns) > 0L,
+  "No expression columns ending in _B or _S were detected."
+)
+
+non_sample_columns <- setdiff(names(expression_raw), sample_columns)
+preferred_gene_columns <- c(
+  "gene", "Gene", "gene_id", "Gene_ID", "symbol", "SYMBOL",
+  "gene_symbol", "GeneSymbol", "X1"
+)
+
+gene_column <- intersect(preferred_gene_columns, non_sample_columns)
+
+if (length(gene_column) == 0L) {
+  assert_true(
+    length(non_sample_columns) == 1L,
+    paste0(
+      "Could not uniquely determine the gene-symbol column. Non-sample columns: ",
+      paste(non_sample_columns, collapse = ", ")
+    )
+  )
+  gene_column <- non_sample_columns[[1]]
+} else {
+  gene_column <- gene_column[[1]]
+}
+
+expression_clean <- expression_raw |>
+  transmute(
+    gene = stringr::str_trim(as.character(.data[[gene_column]])),
+    across(all_of(sample_columns), ~ suppressWarnings(as.numeric(.x)))
+  ) |>
+  filter(!is.na(gene), gene != "") |>
+  group_by(gene) |>
+  summarise(
+    across(all_of(sample_columns), ~ mean(.x, na.rm = TRUE)),
+    .groups = "drop"
+  )
+
+expr_matrix <- expression_clean |>
+  column_to_rownames("gene") |>
+  as.matrix()
+
+storage.mode(expr_matrix) <- "double"
+
+assert_true(!anyDuplicated(rownames(expr_matrix)), "Duplicated genes remain.")
+assert_true(!anyNA(expr_matrix), "Expression contains missing or nonnumeric values.")
+
+expression_metadata <- tibble(expression_sample_id = colnames(expr_matrix)) |>
+  mutate(
+    timepoint_code = stringr::str_extract(expression_sample_id, "[BS]$"),
+    timepoint = recode(timepoint_code, B = "Biopsy", S = "Surgery"),
+    patient_id = stringr::str_remove(expression_sample_id, "_[BS]$")
+  )
+
+cluster_raw <- readr::read_csv(
+  cluster_path,
+  show_col_types = FALSE,
+  col_types = cols(
+    sample_id = col_character(),
+    cluster_assignments = col_integer(),
+    cohort = col_character()
+  )
+)
+
+required_cluster_columns <- c("sample_id", "cluster_assignments", "cohort")
+assert_true(
+  all(required_cluster_columns %in% names(cluster_raw)),
+  "Cluster input must contain sample_id, cluster_assignments, and cohort."
+)
+
+cluster_metadata <- cluster_raw |>
+  transmute(
+    patient_id = stringr::str_trim(sample_id),
+    cluster_assignment = as.integer(cluster_assignments),
+    cohort = stringr::str_to_upper(stringr::str_trim(cohort)),
+    CIM_group = case_when(
+      cluster_assignment == 1L ~ "Dys-CIM",
+      cluster_assignment == 2L ~ "Fun-CIM",
+      TRUE ~ NA_character_
+    )
+  )
+
+assert_true(!anyNA(cluster_metadata$CIM_group), "Invalid cluster assignment.")
+assert_true(!anyDuplicated(cluster_metadata$patient_id), "Duplicated patient ID.")
+
+baseline_metadata <- expression_metadata |>
+  filter(timepoint == "Biopsy") |>
+  left_join(cluster_metadata, by = "patient_id") |>
+  arrange(match(expression_sample_id, colnames(expr_matrix)))
+
+assert_true(
+  !anyNA(baseline_metadata$CIM_group),
+  paste0(
+    "Baseline samples without a cluster match: ",
+    paste(
+      baseline_metadata$expression_sample_id[is.na(baseline_metadata$CIM_group)],
+      collapse = ", "
+    )
+  )
+)
+
+baseline_metadata <- baseline_metadata |>
+  mutate(CIM_group = factor(CIM_group, levels = CIM_MODEL_LEVELS))
+
+sample_summary <- baseline_metadata |>
+  count(CIM_group, name = "n") |>
+  mutate(CIM_group = as.character(CIM_group))
+
+knitr::kable(sample_summary)
+```
+
+# Feature coverage and matrix
+
+```{r feature-coverage}
+individual_genes <- setdiff(features_to_test, "Avg_MHC1")
+required_expression_genes <- unique(c(individual_genes, mhc1_component_genes))
+
+feature_coverage <- tibble(
+  gene = required_expression_genes,
+  present_in_expression = gene %in% rownames(expr_matrix)
+)
+
+knitr::kable(feature_coverage)
+readr::write_csv(
+  feature_coverage,
+  file.path(table_dir, "Baseline_feature_coverage.csv")
+)
+
+assert_true(
+  all(feature_coverage$present_in_expression),
+  paste0(
+    "Missing required genes: ",
+    paste(feature_coverage$gene[!feature_coverage$present_in_expression], collapse = ", ")
+  )
+)
+
+baseline_expression_matrix <- expr_matrix[
+  ,
+  baseline_metadata$expression_sample_id,
+  drop = FALSE
+]
+
+baseline_expression_matrix <- rbind(
+  baseline_expression_matrix,
+  Avg_MHC1 = colMeans(
+    baseline_expression_matrix[mhc1_component_genes, , drop = FALSE],
+    na.rm = FALSE
+  )
+)
+
+feature_matrix <- baseline_expression_matrix[
+  features_to_test,
+  ,
+  drop = FALSE
+]
+```
+
+# Baseline limma analysis
+
+The empirical Bayes model is fitted to the complete transcriptome plus
+`Avg_MHC1`. Raw P values are then extracted for the 37 prespecified features,
+and BH adjustment is applied across those 37 tests only.
+
+```{r baseline-limma}
+group_vector <- factor(
+  baseline_metadata$CIM_group,
+  levels = CIM_MODEL_LEVELS
+)
+
+design <- model.matrix(~ 0 + group_vector)
+colnames(design) <- c("Fun_CIM", "Dys_CIM")
+
+fit <- limma::lmFit(baseline_expression_matrix, design)
+contrast_matrix <- limma::makeContrasts(
+  Dys_minus_Fun = Dys_CIM - Fun_CIM,
+  levels = design
+)
+fit <- limma::contrasts.fit(fit, contrast_matrix)
+fit <- limma::eBayes(fit, trend = TRUE, robust = TRUE)
+
+limma_all <- limma::topTable(
+  fit,
+  coef = "Dys_minus_Fun",
+  number = Inf,
+  sort.by = "none",
+  adjust.method = "none",
+  confint = TRUE
+) |>
+  rownames_to_column("feature") |>
+  as_tibble()
+
+feature_expression_long <- feature_matrix |>
+  t() |>
+  as.data.frame(check.names = FALSE) |>
+  rownames_to_column("expression_sample_id") |>
+  as_tibble() |>
+  pivot_longer(
+    cols = all_of(features_to_test),
+    names_to = "feature",
+    values_to = "expression"
+  ) |>
+  left_join(
+    baseline_metadata |>
+      select(expression_sample_id, patient_id, cohort, CIM_group),
+    by = "expression_sample_id"
+  ) |>
+  mutate(
+    feature = factor(feature, levels = features_to_test),
+    CIM_group = factor(CIM_group, levels = CIM_PLOT_LEVELS)
+  )
+
+group_statistics <- feature_expression_long |>
+  group_by(feature, CIM_group) |>
+  summarise(
+    n = sum(is.finite(expression)),
+    mean = mean(expression, na.rm = TRUE),
+    sd = sd(expression, na.rm = TRUE),
+    median = median(expression, na.rm = TRUE),
+    IQR = IQR(expression, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  mutate(
+    feature = as.character(feature),
+    CIM_group = as.character(CIM_group)
+  ) |>
+  pivot_wider(
+    names_from = CIM_group,
+    values_from = c(n, mean, sd, median, IQR),
+    names_glue = "{.value}_{CIM_group}"
+  )
+
+baseline_statistics <- limma_all |>
+  filter(feature %in% features_to_test) |>
+  transmute(
+    feature,
+    difference_Dys_minus_Fun = logFC,
+    conf_low = CI.L,
+    conf_high = CI.R,
+    average_expression = AveExpr,
+    moderated_t = t,
+    p_value = P.Value,
+    B_statistic = B
+  ) |>
+  mutate(
+    feature = factor(feature, levels = features_to_test)
+  ) |>
+  arrange(feature) |>
+  mutate(
+    feature = as.character(feature),
+    p_adjust_BH = p.adjust(p_value, method = "BH"),
+    significant_BH = !is.na(p_adjust_BH) & p_adjust_BH < 0.05,
+    direction = case_when(
+      significant_BH & difference_Dys_minus_Fun > 0 ~ "Dys-CIM higher",
+      significant_BH & difference_Dys_minus_Fun < 0 ~ "Fun-CIM higher",
+      TRUE ~ "NS"
+    )
+  ) |>
+  left_join(group_statistics, by = "feature") |>
+  select(
+    feature,
+    n_Dys_CIM = `n_Dys-CIM`,
+    mean_Dys_CIM = `mean_Dys-CIM`,
+    sd_Dys_CIM = `sd_Dys-CIM`,
+    median_Dys_CIM = `median_Dys-CIM`,
+    IQR_Dys_CIM = `IQR_Dys-CIM`,
+    n_Fun_CIM = `n_Fun-CIM`,
+    mean_Fun_CIM = `mean_Fun-CIM`,
+    sd_Fun_CIM = `sd_Fun-CIM`,
+    median_Fun_CIM = `median_Fun-CIM`,
+    IQR_Fun_CIM = `IQR_Fun-CIM`,
+    difference_Dys_minus_Fun,
+    conf_low,
+    conf_high,
+    average_expression,
+    moderated_t,
+    p_value,
+    p_adjust_BH,
+    significant_BH,
+    direction,
+    B_statistic
+  )
+
+assert_true(
+  nrow(baseline_statistics) == length(features_to_test),
+  "Not all requested features were returned by limma."
+)
+
+knitr::kable(baseline_statistics, digits = 4)
+
+readr::write_csv(
+  baseline_statistics,
+  file.path(table_dir, "Baseline_individual_gene_statistics.csv")
+)
+
+readr::write_csv(
+  feature_expression_long,
+  file.path(table_dir, "Baseline_individual_gene_expression.csv")
+)
+```
+
+# Individual boxplots
+
+The displayed `P` values are BH-adjusted across all 37 features. No legend or
+caption is added to the plots.
+
+```{r individual-boxplots, fig.width=12, fig.height=20.5}
+baseline_plots <- setNames(features_to_test, features_to_test) |>
+  purrr::map(function(current_feature) {
+    current_p <- baseline_statistics |>
+      filter(feature == current_feature) |>
+      pull(p_adjust_BH)
+
+    make_group_boxplot(
+      feature_expression_long |>
+        filter(feature == current_feature),
+      feature_name = current_feature,
+      p_value = current_p
+    )
+  })
+
+if (isTRUE(params$save_individual_plots)) {
+  purrr::iwalk(baseline_plots, function(plot_object, feature_name) {
+    save_plot_pdf_png(
+      plot_object,
+      file.path(individual_plot_dir, paste0(feature_name, "_baseline")),
+      width = 2.5,
+      height = 2.9
+    )
+  })
+}
+
+baseline_multipanel <- patchwork::wrap_plots(
+  baseline_plots,
+  ncol = 5
+)
+
+print(baseline_multipanel)
+
+save_plot_pdf_png(
+  baseline_multipanel,
+  file.path(figure_dir, "Baseline_individual_gene_multipanel"),
+  width = 12,
+  height = 20.5
+)
+
+ggsave(
+  file.path(figure_dir, "Baseline_individual_gene_multipanel.tiff"),
+  baseline_multipanel,
+  width = 12,
+  height = 20.5,
+  units = "in",
+  dpi = 600,
+  compression = "lzw",
+  bg = "white"
+)
+```
+
+# Reproducibility
+
+```{r session-info}
+writeLines(
+  capture.output(sessionInfo()),
+  file.path(output_dir, "sessionInfo.txt")
+)
+
+sessionInfo()
+```

@@ -1,0 +1,3 @@
+model_id,model_label,model_role,included_covariates,includes_age,includes_tumor_size,includes_grade,includes_pam50,includes_clinical_subtype,color
+M0,M0: Unadjusted,Primary univariable,,FALSE,FALSE,FALSE,FALSE,FALSE,#4DAF4A
+M2,M2: Prespecified adjusted,Primary adjusted,age_5y; tumor_size; grade; clinical_subtype,TRUE,TRUE,TRUE,FALSE,TRUE,#E41A1C

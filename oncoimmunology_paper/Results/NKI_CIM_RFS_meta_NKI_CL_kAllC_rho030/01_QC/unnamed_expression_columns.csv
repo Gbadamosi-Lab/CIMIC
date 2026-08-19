@@ -1,0 +1,2 @@
+column_index,entirely_empty,sequential_row_index,action
+1,FALSE,TRUE,removed: verified sequential row index (1:n)

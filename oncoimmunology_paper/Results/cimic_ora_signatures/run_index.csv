@@ -1,0 +1,13 @@
+dir,scope,k_mode,cim,rho,gene_set,n_genes,enrichment_run,label
+"oncoimmunology_paper/Results/cimic_ora_signatures/ALL3/kAllC/rho0.3_Fun_all","ALL3_NKI.NEO.TNBCCL","k_all_concordant","Fun",0.3,"all",550,TRUE,"ALL3_NKI.NEO.TNBCCL | k_all_concordant | Fun-CIM | rho>=0.3 | all genes"
+"oncoimmunology_paper/Results/cimic_ora_signatures/ALL3/kAllC/rho0.3_Fun_top200","ALL3_NKI.NEO.TNBCCL","k_all_concordant","Fun",0.3,"top200",200,TRUE,"ALL3_NKI.NEO.TNBCCL | k_all_concordant | Fun-CIM | rho>=0.3 | top 200"
+"oncoimmunology_paper/Results/cimic_ora_signatures/ALL3/kAllC/rho0.3_Dys_all","ALL3_NKI.NEO.TNBCCL","k_all_concordant","Dys",0.3,"all",6,TRUE,"ALL3_NKI.NEO.TNBCCL | k_all_concordant | Dys-CIM | rho>=0.3 | all genes"
+"oncoimmunology_paper/Results/cimic_ora_signatures/NKI_NEO/kAllC/rho0.3_Fun_all","NKI.NEO","k_all_concordant","Fun",0.3,"all",3063,TRUE,"NKI.NEO | k_all_concordant | Fun-CIM | rho>=0.3 | all genes"
+"oncoimmunology_paper/Results/cimic_ora_signatures/NKI_NEO/kAllC/rho0.3_Fun_top200","NKI.NEO","k_all_concordant","Fun",0.3,"top200",200,TRUE,"NKI.NEO | k_all_concordant | Fun-CIM | rho>=0.3 | top 200"
+"oncoimmunology_paper/Results/cimic_ora_signatures/NKI_NEO/kAllC/rho0.3_Dys_all","NKI.NEO","k_all_concordant","Dys",0.3,"all",22,TRUE,"NKI.NEO | k_all_concordant | Dys-CIM | rho>=0.3 | all genes"
+"oncoimmunology_paper/Results/cimic_ora_signatures/NKI_CL/kAllC/rho0.3_Fun_all","NKI.TNBCCL","k_all_concordant","Fun",0.3,"all",1079,TRUE,"NKI.TNBCCL | k_all_concordant | Fun-CIM | rho>=0.3 | all genes"
+"oncoimmunology_paper/Results/cimic_ora_signatures/NKI_CL/kAllC/rho0.3_Fun_top200","NKI.TNBCCL","k_all_concordant","Fun",0.3,"top200",200,TRUE,"NKI.TNBCCL | k_all_concordant | Fun-CIM | rho>=0.3 | top 200"
+"oncoimmunology_paper/Results/cimic_ora_signatures/NKI_CL/kAllC/rho0.3_Dys_all","NKI.TNBCCL","k_all_concordant","Dys",0.3,"all",402,TRUE,"NKI.TNBCCL | k_all_concordant | Dys-CIM | rho>=0.3 | all genes"
+"oncoimmunology_paper/Results/cimic_ora_signatures/NKI_CL/kAllC/rho0.3_Dys_top200","NKI.TNBCCL","k_all_concordant","Dys",0.3,"top200",200,TRUE,"NKI.TNBCCL | k_all_concordant | Dys-CIM | rho>=0.3 | top 200"
+"oncoimmunology_paper/Results/cimic_ora_signatures/NEO_CL/kAllC/rho0.3_Fun_all","NEO.TNBCCL","k_all_concordant","Fun",0.3,"all",2366,TRUE,"NEO.TNBCCL | k_all_concordant | Fun-CIM | rho>=0.3 | all genes"
+"oncoimmunology_paper/Results/cimic_ora_signatures/NEO_CL/kAllC/rho0.3_Fun_top200","NEO.TNBCCL","k_all_concordant","Fun",0.3,"top200",200,TRUE,"NEO.TNBCCL | k_all_concordant | Fun-CIM | rho>=0.3 | top 200"

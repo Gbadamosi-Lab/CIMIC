@@ -1,0 +1,26 @@
+software,version,role
+R,4.5.0,Statistical computing environment
+Bioconductor,3.22,Bioconductor release associated with the R environment
+tidyverse,2.0.0,Analysis dependency
+dplyr,1.1.4,Analysis dependency
+tidyr,1.3.1,Analysis dependency
+purrr,1.1.0,Analysis dependency
+readr,2.1.5,Analysis dependency
+stringr,1.5.2,Analysis dependency
+tibble,3.3.0,Analysis dependency
+forcats,1.0.1,Analysis dependency
+ggplot2,4.0.0,Analysis dependency
+readxl,1.4.5,Analysis dependency
+janitor,2.2.1,Analysis dependency
+survival,3.8.3,Analysis dependency
+broom,1.0.10,Analysis dependency
+pheatmap,1.0.13,Analysis dependency
+gridExtra,2.3,Analysis dependency
+RColorBrewer,1.1.3,Analysis dependency
+scales,1.4.0,Analysis dependency
+knitr,1.50,Analysis dependency
+patchwork,1.3.2,Analysis dependency
+BiocManager,1.30.26,Analysis dependency
+GSVA,2.3.4,Analysis dependency
+rmarkdown,2.30,Analysis dependency
+coxphf,1.13.4,Analysis dependency

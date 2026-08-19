@@ -1,0 +1,433 @@
+"Method","Cell_Type","cluster","Timepoint","n_values","n_patients","n_missing"
+"CIBERSORTx","B cells memory","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","B cells memory","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","B cells memory","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","B cells memory","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","B cells naive","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","B cells naive","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","B cells naive","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","B cells naive","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","Dendritic cells activated","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","Dendritic cells activated","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","Dendritic cells activated","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","Dendritic cells activated","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","Dendritic cells resting","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","Dendritic cells resting","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","Dendritic cells resting","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","Dendritic cells resting","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","Eosinophils","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","Eosinophils","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","Eosinophils","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","Eosinophils","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","Macrophages M0","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","Macrophages M0","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","Macrophages M0","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","Macrophages M0","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","Macrophages M1","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","Macrophages M1","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","Macrophages M1","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","Macrophages M1","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","Macrophages M2","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","Macrophages M2","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","Macrophages M2","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","Macrophages M2","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","Mast cells activated","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","Mast cells activated","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","Mast cells activated","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","Mast cells activated","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","Mast cells resting","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","Mast cells resting","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","Mast cells resting","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","Mast cells resting","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","Monocytes","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","Monocytes","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","Monocytes","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","Monocytes","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","NK cells activated","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","NK cells activated","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","NK cells activated","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","NK cells activated","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","NK cells resting","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","NK cells resting","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","NK cells resting","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","NK cells resting","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","Neutrophils","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","Neutrophils","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","Neutrophils","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","Neutrophils","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","Plasma cells","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","Plasma cells","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","Plasma cells","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","Plasma cells","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","T cells CD4+ (general)","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","T cells CD4+ (general)","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","T cells CD4+ (general)","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","T cells CD4+ (general)","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","T cells CD8+ (total)","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","T cells CD8+ (total)","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","T cells CD8+ (total)","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","T cells CD8+ (total)","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","T cells follicular helper","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","T cells follicular helper","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","T cells follicular helper","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","T cells follicular helper","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","T cells gamma delta","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","T cells gamma delta","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","T cells gamma delta","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","T cells gamma delta","Dys-CIM","Surgery",11,11,0
+"CIBERSORTx","T cells regulatory (Tregs)","Fun-CIM","Biopsy",25,25,0
+"CIBERSORTx","T cells regulatory (Tregs)","Fun-CIM","Surgery",25,25,0
+"CIBERSORTx","T cells regulatory (Tregs)","Dys-CIM","Biopsy",11,11,0
+"CIBERSORTx","T cells regulatory (Tregs)","Dys-CIM","Surgery",11,11,0
+"consensus_tme","B cell","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","B cell","Fun-CIM","Surgery",25,25,0
+"consensus_tme","B cell","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","B cell","Dys-CIM","Surgery",11,11,0
+"consensus_tme","Cancer associated fibroblast","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","Cancer associated fibroblast","Fun-CIM","Surgery",25,25,0
+"consensus_tme","Cancer associated fibroblast","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","Cancer associated fibroblast","Dys-CIM","Surgery",11,11,0
+"consensus_tme","Endothelial cell","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","Endothelial cell","Fun-CIM","Surgery",25,25,0
+"consensus_tme","Endothelial cell","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","Endothelial cell","Dys-CIM","Surgery",11,11,0
+"consensus_tme","Eosinophil","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","Eosinophil","Fun-CIM","Surgery",25,25,0
+"consensus_tme","Eosinophil","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","Eosinophil","Dys-CIM","Surgery",11,11,0
+"consensus_tme","Macrophage","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","Macrophage","Fun-CIM","Surgery",25,25,0
+"consensus_tme","Macrophage","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","Macrophage","Dys-CIM","Surgery",11,11,0
+"consensus_tme","Macrophage M1","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","Macrophage M1","Fun-CIM","Surgery",25,25,0
+"consensus_tme","Macrophage M1","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","Macrophage M1","Dys-CIM","Surgery",11,11,0
+"consensus_tme","Macrophage M2","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","Macrophage M2","Fun-CIM","Surgery",25,25,0
+"consensus_tme","Macrophage M2","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","Macrophage M2","Dys-CIM","Surgery",11,11,0
+"consensus_tme","Mast cell","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","Mast cell","Fun-CIM","Surgery",25,25,0
+"consensus_tme","Mast cell","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","Mast cell","Dys-CIM","Surgery",11,11,0
+"consensus_tme","Monocyte","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","Monocyte","Fun-CIM","Surgery",25,25,0
+"consensus_tme","Monocyte","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","Monocyte","Dys-CIM","Surgery",11,11,0
+"consensus_tme","Myeloid dendritic cell","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","Myeloid dendritic cell","Fun-CIM","Surgery",25,25,0
+"consensus_tme","Myeloid dendritic cell","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","Myeloid dendritic cell","Dys-CIM","Surgery",11,11,0
+"consensus_tme","NK cell","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","NK cell","Fun-CIM","Surgery",25,25,0
+"consensus_tme","NK cell","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","NK cell","Dys-CIM","Surgery",11,11,0
+"consensus_tme","Neutrophil","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","Neutrophil","Fun-CIM","Surgery",25,25,0
+"consensus_tme","Neutrophil","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","Neutrophil","Dys-CIM","Surgery",11,11,0
+"consensus_tme","T cell CD4+","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","T cell CD4+","Fun-CIM","Surgery",25,25,0
+"consensus_tme","T cell CD4+","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","T cell CD4+","Dys-CIM","Surgery",11,11,0
+"consensus_tme","T cell CD8+","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","T cell CD8+","Fun-CIM","Surgery",25,25,0
+"consensus_tme","T cell CD8+","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","T cell CD8+","Dys-CIM","Surgery",11,11,0
+"consensus_tme","T cell gamma delta","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","T cell gamma delta","Fun-CIM","Surgery",25,25,0
+"consensus_tme","T cell gamma delta","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","T cell gamma delta","Dys-CIM","Surgery",11,11,0
+"consensus_tme","T cell regulatory (Tregs)","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","T cell regulatory (Tregs)","Fun-CIM","Surgery",25,25,0
+"consensus_tme","T cell regulatory (Tregs)","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","T cell regulatory (Tregs)","Dys-CIM","Surgery",11,11,0
+"consensus_tme","cytotoxicity score","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","cytotoxicity score","Fun-CIM","Surgery",25,25,0
+"consensus_tme","cytotoxicity score","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","cytotoxicity score","Dys-CIM","Surgery",11,11,0
+"consensus_tme","immune score","Fun-CIM","Biopsy",25,25,0
+"consensus_tme","immune score","Fun-CIM","Surgery",25,25,0
+"consensus_tme","immune score","Dys-CIM","Biopsy",11,11,0
+"consensus_tme","immune score","Dys-CIM","Surgery",11,11,0
+"epic","B cell","Fun-CIM","Biopsy",25,25,0
+"epic","B cell","Fun-CIM","Surgery",25,25,0
+"epic","B cell","Dys-CIM","Biopsy",11,11,0
+"epic","B cell","Dys-CIM","Surgery",11,11,0
+"epic","Cancer associated fibroblast","Fun-CIM","Biopsy",25,25,0
+"epic","Cancer associated fibroblast","Fun-CIM","Surgery",25,25,0
+"epic","Cancer associated fibroblast","Dys-CIM","Biopsy",11,11,0
+"epic","Cancer associated fibroblast","Dys-CIM","Surgery",11,11,0
+"epic","Endothelial cell","Fun-CIM","Biopsy",25,25,0
+"epic","Endothelial cell","Fun-CIM","Surgery",25,25,0
+"epic","Endothelial cell","Dys-CIM","Biopsy",11,11,0
+"epic","Endothelial cell","Dys-CIM","Surgery",11,11,0
+"epic","Macrophage","Fun-CIM","Biopsy",25,25,0
+"epic","Macrophage","Fun-CIM","Surgery",25,25,0
+"epic","Macrophage","Dys-CIM","Biopsy",11,11,0
+"epic","Macrophage","Dys-CIM","Surgery",11,11,0
+"epic","NK cell","Fun-CIM","Biopsy",25,25,0
+"epic","NK cell","Fun-CIM","Surgery",25,25,0
+"epic","NK cell","Dys-CIM","Biopsy",11,11,0
+"epic","NK cell","Dys-CIM","Surgery",11,11,0
+"epic","T cell CD4+","Fun-CIM","Biopsy",25,25,0
+"epic","T cell CD4+","Fun-CIM","Surgery",25,25,0
+"epic","T cell CD4+","Dys-CIM","Biopsy",11,11,0
+"epic","T cell CD4+","Dys-CIM","Surgery",11,11,0
+"epic","T cell CD8+","Fun-CIM","Biopsy",25,25,0
+"epic","T cell CD8+","Fun-CIM","Surgery",25,25,0
+"epic","T cell CD8+","Dys-CIM","Biopsy",11,11,0
+"epic","T cell CD8+","Dys-CIM","Surgery",11,11,0
+"epic","uncharacterized cell","Fun-CIM","Biopsy",25,25,0
+"epic","uncharacterized cell","Fun-CIM","Surgery",25,25,0
+"epic","uncharacterized cell","Dys-CIM","Biopsy",11,11,0
+"epic","uncharacterized cell","Dys-CIM","Surgery",11,11,0
+"estimate","ESTIMATEScore","Fun-CIM","Biopsy",25,25,0
+"estimate","ESTIMATEScore","Fun-CIM","Surgery",25,25,0
+"estimate","ESTIMATEScore","Dys-CIM","Biopsy",11,11,0
+"estimate","ESTIMATEScore","Dys-CIM","Surgery",11,11,0
+"estimate","ImmuneScore","Fun-CIM","Biopsy",25,25,0
+"estimate","ImmuneScore","Fun-CIM","Surgery",25,25,0
+"estimate","ImmuneScore","Dys-CIM","Biopsy",11,11,0
+"estimate","ImmuneScore","Dys-CIM","Surgery",11,11,0
+"estimate","StromalScore","Fun-CIM","Biopsy",25,25,0
+"estimate","StromalScore","Fun-CIM","Surgery",25,25,0
+"estimate","StromalScore","Dys-CIM","Biopsy",11,11,0
+"estimate","StromalScore","Dys-CIM","Surgery",11,11,0
+"estimate","TumorPurity","Fun-CIM","Biopsy",25,25,0
+"estimate","TumorPurity","Fun-CIM","Surgery",25,25,0
+"estimate","TumorPurity","Dys-CIM","Biopsy",11,11,0
+"estimate","TumorPurity","Dys-CIM","Surgery",11,11,0
+"mcp_counter","B cell","Fun-CIM","Biopsy",25,25,0
+"mcp_counter","B cell","Fun-CIM","Surgery",25,25,0
+"mcp_counter","B cell","Dys-CIM","Biopsy",11,11,0
+"mcp_counter","B cell","Dys-CIM","Surgery",11,11,0
+"mcp_counter","Cancer associated fibroblast","Fun-CIM","Biopsy",25,25,0
+"mcp_counter","Cancer associated fibroblast","Fun-CIM","Surgery",25,25,0
+"mcp_counter","Cancer associated fibroblast","Dys-CIM","Biopsy",11,11,0
+"mcp_counter","Cancer associated fibroblast","Dys-CIM","Surgery",11,11,0
+"mcp_counter","Endothelial cell","Fun-CIM","Biopsy",25,25,0
+"mcp_counter","Endothelial cell","Fun-CIM","Surgery",25,25,0
+"mcp_counter","Endothelial cell","Dys-CIM","Biopsy",11,11,0
+"mcp_counter","Endothelial cell","Dys-CIM","Surgery",11,11,0
+"mcp_counter","Macrophage/Monocyte","Fun-CIM","Biopsy",25,25,0
+"mcp_counter","Macrophage/Monocyte","Fun-CIM","Surgery",25,25,0
+"mcp_counter","Macrophage/Monocyte","Dys-CIM","Biopsy",11,11,0
+"mcp_counter","Macrophage/Monocyte","Dys-CIM","Surgery",11,11,0
+"mcp_counter","Monocyte","Fun-CIM","Biopsy",25,25,0
+"mcp_counter","Monocyte","Fun-CIM","Surgery",25,25,0
+"mcp_counter","Monocyte","Dys-CIM","Biopsy",11,11,0
+"mcp_counter","Monocyte","Dys-CIM","Surgery",11,11,0
+"mcp_counter","Myeloid dendritic cell","Fun-CIM","Biopsy",25,25,0
+"mcp_counter","Myeloid dendritic cell","Fun-CIM","Surgery",25,25,0
+"mcp_counter","Myeloid dendritic cell","Dys-CIM","Biopsy",11,11,0
+"mcp_counter","Myeloid dendritic cell","Dys-CIM","Surgery",11,11,0
+"mcp_counter","NK cell","Fun-CIM","Biopsy",25,25,0
+"mcp_counter","NK cell","Fun-CIM","Surgery",25,25,0
+"mcp_counter","NK cell","Dys-CIM","Biopsy",11,11,0
+"mcp_counter","NK cell","Dys-CIM","Surgery",11,11,0
+"mcp_counter","Neutrophil","Fun-CIM","Biopsy",25,25,0
+"mcp_counter","Neutrophil","Fun-CIM","Surgery",25,25,0
+"mcp_counter","Neutrophil","Dys-CIM","Biopsy",11,11,0
+"mcp_counter","Neutrophil","Dys-CIM","Surgery",11,11,0
+"mcp_counter","T cell","Fun-CIM","Biopsy",25,25,0
+"mcp_counter","T cell","Fun-CIM","Surgery",25,25,0
+"mcp_counter","T cell","Dys-CIM","Biopsy",11,11,0
+"mcp_counter","T cell","Dys-CIM","Surgery",11,11,0
+"mcp_counter","T cell CD8+","Fun-CIM","Biopsy",25,25,0
+"mcp_counter","T cell CD8+","Fun-CIM","Surgery",25,25,0
+"mcp_counter","T cell CD8+","Dys-CIM","Biopsy",11,11,0
+"mcp_counter","T cell CD8+","Dys-CIM","Surgery",11,11,0
+"mcp_counter","cytotoxicity score","Fun-CIM","Biopsy",25,25,0
+"mcp_counter","cytotoxicity score","Fun-CIM","Surgery",25,25,0
+"mcp_counter","cytotoxicity score","Dys-CIM","Biopsy",11,11,0
+"mcp_counter","cytotoxicity score","Dys-CIM","Surgery",11,11,0
+"quantiseq","B cell","Fun-CIM","Biopsy",25,25,0
+"quantiseq","B cell","Fun-CIM","Surgery",25,25,0
+"quantiseq","B cell","Dys-CIM","Biopsy",11,11,0
+"quantiseq","B cell","Dys-CIM","Surgery",11,11,0
+"quantiseq","Macrophage M1","Fun-CIM","Biopsy",25,25,0
+"quantiseq","Macrophage M1","Fun-CIM","Surgery",25,25,0
+"quantiseq","Macrophage M1","Dys-CIM","Biopsy",11,11,0
+"quantiseq","Macrophage M1","Dys-CIM","Surgery",11,11,0
+"quantiseq","Macrophage M2","Fun-CIM","Biopsy",25,25,0
+"quantiseq","Macrophage M2","Fun-CIM","Surgery",25,25,0
+"quantiseq","Macrophage M2","Dys-CIM","Biopsy",11,11,0
+"quantiseq","Macrophage M2","Dys-CIM","Surgery",11,11,0
+"quantiseq","Monocyte","Fun-CIM","Biopsy",25,25,0
+"quantiseq","Monocyte","Fun-CIM","Surgery",25,25,0
+"quantiseq","Monocyte","Dys-CIM","Biopsy",11,11,0
+"quantiseq","Monocyte","Dys-CIM","Surgery",11,11,0
+"quantiseq","Myeloid dendritic cell","Fun-CIM","Biopsy",25,25,0
+"quantiseq","Myeloid dendritic cell","Fun-CIM","Surgery",25,25,0
+"quantiseq","Myeloid dendritic cell","Dys-CIM","Biopsy",11,11,0
+"quantiseq","Myeloid dendritic cell","Dys-CIM","Surgery",11,11,0
+"quantiseq","NK cell","Fun-CIM","Biopsy",25,25,0
+"quantiseq","NK cell","Fun-CIM","Surgery",25,25,0
+"quantiseq","NK cell","Dys-CIM","Biopsy",11,11,0
+"quantiseq","NK cell","Dys-CIM","Surgery",11,11,0
+"quantiseq","Neutrophil","Fun-CIM","Biopsy",25,25,0
+"quantiseq","Neutrophil","Fun-CIM","Surgery",25,25,0
+"quantiseq","Neutrophil","Dys-CIM","Biopsy",11,11,0
+"quantiseq","Neutrophil","Dys-CIM","Surgery",11,11,0
+"quantiseq","T cell CD4+ (non-regulatory)","Fun-CIM","Biopsy",25,25,0
+"quantiseq","T cell CD4+ (non-regulatory)","Fun-CIM","Surgery",25,25,0
+"quantiseq","T cell CD4+ (non-regulatory)","Dys-CIM","Biopsy",11,11,0
+"quantiseq","T cell CD4+ (non-regulatory)","Dys-CIM","Surgery",11,11,0
+"quantiseq","T cell CD8+","Fun-CIM","Biopsy",25,25,0
+"quantiseq","T cell CD8+","Fun-CIM","Surgery",25,25,0
+"quantiseq","T cell CD8+","Dys-CIM","Biopsy",11,11,0
+"quantiseq","T cell CD8+","Dys-CIM","Surgery",11,11,0
+"quantiseq","T cell regulatory (Tregs)","Fun-CIM","Biopsy",25,25,0
+"quantiseq","T cell regulatory (Tregs)","Fun-CIM","Surgery",25,25,0
+"quantiseq","T cell regulatory (Tregs)","Dys-CIM","Biopsy",11,11,0
+"quantiseq","T cell regulatory (Tregs)","Dys-CIM","Surgery",11,11,0
+"quantiseq","uncharacterized cell","Fun-CIM","Biopsy",25,25,0
+"quantiseq","uncharacterized cell","Fun-CIM","Surgery",25,25,0
+"quantiseq","uncharacterized cell","Dys-CIM","Biopsy",11,11,0
+"quantiseq","uncharacterized cell","Dys-CIM","Surgery",11,11,0
+"timer","B cell","Fun-CIM","Biopsy",25,25,0
+"timer","B cell","Fun-CIM","Surgery",25,25,0
+"timer","B cell","Dys-CIM","Biopsy",11,11,0
+"timer","B cell","Dys-CIM","Surgery",11,11,0
+"timer","Macrophage","Fun-CIM","Biopsy",25,25,0
+"timer","Macrophage","Fun-CIM","Surgery",25,25,0
+"timer","Macrophage","Dys-CIM","Biopsy",11,11,0
+"timer","Macrophage","Dys-CIM","Surgery",11,11,0
+"timer","Myeloid dendritic cell","Fun-CIM","Biopsy",25,25,0
+"timer","Myeloid dendritic cell","Fun-CIM","Surgery",25,25,0
+"timer","Myeloid dendritic cell","Dys-CIM","Biopsy",11,11,0
+"timer","Myeloid dendritic cell","Dys-CIM","Surgery",11,11,0
+"timer","Neutrophil","Fun-CIM","Biopsy",25,25,0
+"timer","Neutrophil","Fun-CIM","Surgery",25,25,0
+"timer","Neutrophil","Dys-CIM","Biopsy",11,11,0
+"timer","Neutrophil","Dys-CIM","Surgery",11,11,0
+"timer","T cell CD4+","Fun-CIM","Biopsy",25,25,0
+"timer","T cell CD4+","Fun-CIM","Surgery",25,25,0
+"timer","T cell CD4+","Dys-CIM","Biopsy",11,11,0
+"timer","T cell CD4+","Dys-CIM","Surgery",11,11,0
+"timer","T cell CD8+","Fun-CIM","Biopsy",25,25,0
+"timer","T cell CD8+","Fun-CIM","Surgery",25,25,0
+"timer","T cell CD8+","Dys-CIM","Biopsy",11,11,0
+"timer","T cell CD8+","Dys-CIM","Surgery",11,11,0
+"xcell","B cell","Fun-CIM","Biopsy",25,25,0
+"xcell","B cell","Fun-CIM","Surgery",25,25,0
+"xcell","B cell","Dys-CIM","Biopsy",11,11,0
+"xcell","B cell","Dys-CIM","Surgery",11,11,0
+"xcell","B cell memory","Fun-CIM","Biopsy",25,25,0
+"xcell","B cell memory","Fun-CIM","Surgery",25,25,0
+"xcell","B cell memory","Dys-CIM","Biopsy",11,11,0
+"xcell","B cell memory","Dys-CIM","Surgery",11,11,0
+"xcell","B cell naive","Fun-CIM","Biopsy",25,25,0
+"xcell","B cell naive","Fun-CIM","Surgery",25,25,0
+"xcell","B cell naive","Dys-CIM","Biopsy",11,11,0
+"xcell","B cell naive","Dys-CIM","Surgery",11,11,0
+"xcell","B cell plasma","Fun-CIM","Biopsy",25,25,0
+"xcell","B cell plasma","Fun-CIM","Surgery",25,25,0
+"xcell","B cell plasma","Dys-CIM","Biopsy",11,11,0
+"xcell","B cell plasma","Dys-CIM","Surgery",11,11,0
+"xcell","Cancer associated fibroblast","Fun-CIM","Biopsy",25,25,0
+"xcell","Cancer associated fibroblast","Fun-CIM","Surgery",25,25,0
+"xcell","Cancer associated fibroblast","Dys-CIM","Biopsy",11,11,0
+"xcell","Cancer associated fibroblast","Dys-CIM","Surgery",11,11,0
+"xcell","Class-switched memory B cell","Fun-CIM","Biopsy",25,25,0
+"xcell","Class-switched memory B cell","Fun-CIM","Surgery",25,25,0
+"xcell","Class-switched memory B cell","Dys-CIM","Biopsy",11,11,0
+"xcell","Class-switched memory B cell","Dys-CIM","Surgery",11,11,0
+"xcell","Common lymphoid progenitor","Fun-CIM","Biopsy",25,25,0
+"xcell","Common lymphoid progenitor","Fun-CIM","Surgery",25,25,0
+"xcell","Common lymphoid progenitor","Dys-CIM","Biopsy",11,11,0
+"xcell","Common lymphoid progenitor","Dys-CIM","Surgery",11,11,0
+"xcell","Common myeloid progenitor","Fun-CIM","Biopsy",25,25,0
+"xcell","Common myeloid progenitor","Fun-CIM","Surgery",25,25,0
+"xcell","Common myeloid progenitor","Dys-CIM","Biopsy",11,11,0
+"xcell","Common myeloid progenitor","Dys-CIM","Surgery",11,11,0
+"xcell","Endothelial cell","Fun-CIM","Biopsy",25,25,0
+"xcell","Endothelial cell","Fun-CIM","Surgery",25,25,0
+"xcell","Endothelial cell","Dys-CIM","Biopsy",11,11,0
+"xcell","Endothelial cell","Dys-CIM","Surgery",11,11,0
+"xcell","Eosinophil","Fun-CIM","Biopsy",25,25,0
+"xcell","Eosinophil","Fun-CIM","Surgery",25,25,0
+"xcell","Eosinophil","Dys-CIM","Biopsy",11,11,0
+"xcell","Eosinophil","Dys-CIM","Surgery",11,11,0
+"xcell","Granulocyte-monocyte progenitor","Fun-CIM","Biopsy",25,25,0
+"xcell","Granulocyte-monocyte progenitor","Fun-CIM","Surgery",25,25,0
+"xcell","Granulocyte-monocyte progenitor","Dys-CIM","Biopsy",11,11,0
+"xcell","Granulocyte-monocyte progenitor","Dys-CIM","Surgery",11,11,0
+"xcell","Hematopoietic stem cell","Fun-CIM","Biopsy",25,25,0
+"xcell","Hematopoietic stem cell","Fun-CIM","Surgery",25,25,0
+"xcell","Hematopoietic stem cell","Dys-CIM","Biopsy",11,11,0
+"xcell","Hematopoietic stem cell","Dys-CIM","Surgery",11,11,0
+"xcell","Macrophage","Fun-CIM","Biopsy",25,25,0
+"xcell","Macrophage","Fun-CIM","Surgery",25,25,0
+"xcell","Macrophage","Dys-CIM","Biopsy",11,11,0
+"xcell","Macrophage","Dys-CIM","Surgery",11,11,0
+"xcell","Macrophage M1","Fun-CIM","Biopsy",25,25,0
+"xcell","Macrophage M1","Fun-CIM","Surgery",25,25,0
+"xcell","Macrophage M1","Dys-CIM","Biopsy",11,11,0
+"xcell","Macrophage M1","Dys-CIM","Surgery",11,11,0
+"xcell","Macrophage M2","Fun-CIM","Biopsy",25,25,0
+"xcell","Macrophage M2","Fun-CIM","Surgery",25,25,0
+"xcell","Macrophage M2","Dys-CIM","Biopsy",11,11,0
+"xcell","Macrophage M2","Dys-CIM","Surgery",11,11,0
+"xcell","Mast cell","Fun-CIM","Biopsy",25,25,0
+"xcell","Mast cell","Fun-CIM","Surgery",25,25,0
+"xcell","Mast cell","Dys-CIM","Biopsy",11,11,0
+"xcell","Mast cell","Dys-CIM","Surgery",11,11,0
+"xcell","Monocyte","Fun-CIM","Biopsy",25,25,0
+"xcell","Monocyte","Fun-CIM","Surgery",25,25,0
+"xcell","Monocyte","Dys-CIM","Biopsy",11,11,0
+"xcell","Monocyte","Dys-CIM","Surgery",11,11,0
+"xcell","Myeloid dendritic cell","Fun-CIM","Biopsy",25,25,0
+"xcell","Myeloid dendritic cell","Fun-CIM","Surgery",25,25,0
+"xcell","Myeloid dendritic cell","Dys-CIM","Biopsy",11,11,0
+"xcell","Myeloid dendritic cell","Dys-CIM","Surgery",11,11,0
+"xcell","Myeloid dendritic cell activated","Fun-CIM","Biopsy",25,25,0
+"xcell","Myeloid dendritic cell activated","Fun-CIM","Surgery",25,25,0
+"xcell","Myeloid dendritic cell activated","Dys-CIM","Biopsy",11,11,0
+"xcell","Myeloid dendritic cell activated","Dys-CIM","Surgery",11,11,0
+"xcell","NK cell","Fun-CIM","Biopsy",25,25,0
+"xcell","NK cell","Fun-CIM","Surgery",25,25,0
+"xcell","NK cell","Dys-CIM","Biopsy",11,11,0
+"xcell","NK cell","Dys-CIM","Surgery",11,11,0
+"xcell","Neutrophil","Fun-CIM","Biopsy",25,25,0
+"xcell","Neutrophil","Fun-CIM","Surgery",25,25,0
+"xcell","Neutrophil","Dys-CIM","Biopsy",11,11,0
+"xcell","Neutrophil","Dys-CIM","Surgery",11,11,0
+"xcell","Plasmacytoid dendritic cell","Fun-CIM","Biopsy",25,25,0
+"xcell","Plasmacytoid dendritic cell","Fun-CIM","Surgery",25,25,0
+"xcell","Plasmacytoid dendritic cell","Dys-CIM","Biopsy",11,11,0
+"xcell","Plasmacytoid dendritic cell","Dys-CIM","Surgery",11,11,0
+"xcell","T cell CD4+ (aggregated)","Fun-CIM","Biopsy",25,25,0
+"xcell","T cell CD4+ (aggregated)","Fun-CIM","Surgery",25,25,0
+"xcell","T cell CD4+ (aggregated)","Dys-CIM","Biopsy",11,11,0
+"xcell","T cell CD4+ (aggregated)","Dys-CIM","Surgery",11,11,0
+"xcell","T cell CD8+ (aggregated)","Fun-CIM","Biopsy",25,25,0
+"xcell","T cell CD8+ (aggregated)","Fun-CIM","Surgery",25,25,0
+"xcell","T cell CD8+ (aggregated)","Dys-CIM","Biopsy",11,11,0
+"xcell","T cell CD8+ (aggregated)","Dys-CIM","Surgery",11,11,0
+"xcell","T cell NK","Fun-CIM","Biopsy",25,25,0
+"xcell","T cell NK","Fun-CIM","Surgery",25,25,0
+"xcell","T cell NK","Dys-CIM","Biopsy",11,11,0
+"xcell","T cell NK","Dys-CIM","Surgery",11,11,0
+"xcell","T cell gamma delta","Fun-CIM","Biopsy",25,25,0
+"xcell","T cell gamma delta","Fun-CIM","Surgery",25,25,0
+"xcell","T cell gamma delta","Dys-CIM","Biopsy",11,11,0
+"xcell","T cell gamma delta","Dys-CIM","Surgery",11,11,0
+"xcell","T cell regulatory (Tregs)","Fun-CIM","Biopsy",25,25,0
+"xcell","T cell regulatory (Tregs)","Fun-CIM","Surgery",25,25,0
+"xcell","T cell regulatory (Tregs)","Dys-CIM","Biopsy",11,11,0
+"xcell","T cell regulatory (Tregs)","Dys-CIM","Surgery",11,11,0
+"xcell","immune score","Fun-CIM","Biopsy",25,25,0
+"xcell","immune score","Fun-CIM","Surgery",25,25,0
+"xcell","immune score","Dys-CIM","Biopsy",11,11,0
+"xcell","immune score","Dys-CIM","Surgery",11,11,0
+"xcell","microenvironment score","Fun-CIM","Biopsy",25,25,0
+"xcell","microenvironment score","Fun-CIM","Surgery",25,25,0
+"xcell","microenvironment score","Dys-CIM","Biopsy",11,11,0
+"xcell","microenvironment score","Dys-CIM","Surgery",11,11,0
+"xcell","stroma score","Fun-CIM","Biopsy",25,25,0
+"xcell","stroma score","Fun-CIM","Surgery",25,25,0
+"xcell","stroma score","Dys-CIM","Biopsy",11,11,0
+"xcell","stroma score","Dys-CIM","Surgery",11,11,0

@@ -1,0 +1,1706 @@
+---
+title: "CIMIC Clinical Analysis and NKI PAM50 Classification"
+author: "Gbadamosi Lab - IL/MG"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: show
+params:
+  data_dir: "C:/Users/yasmi/OneDrive - University of Florida/Gbadamosi Lab/Iasmim Lopes/01.CIMIC/Clinical_data/data"
+  results_dir: "C:/Users/yasmi/OneDrive - University of Florida/Gbadamosi Lab/Iasmim Lopes/01.CIMIC/Clinical_data/results"
+  monte_carlo_B: 1000000
+  random_seed: 20260812
+---
+
+<!--
+PURPOSE
+  1. Calculate research-use PAM50 subtypes for NKI biopsy (_B) and surgery (_S)
+     samples from log2(TPM + 1) RNA-seq expression using genefu.
+  2. Add the NKI PAM50 predictions to a new NKI master file.
+  3. Construct validated one-row-per-patient NKI, SMC, and combined datasets.
+  4. Generate cohort-specific demographics, combined demographics, and the
+     Fun-CIM versus Dys-CIM clinical-characteristics table.
+  5. Generate a separate CSV documenting every statistical test.
+  6. Generate manuscript figures using the established CIMIC colors/aesthetics.
+
+IMPORTANT
+  - _B and _S are biological timepoints and are never discarded before a
+    canonical patient ID and timepoint have been stored and validated.
+  - SMC _1 identifies biopsy and _3 identifies surgery when an explicit _B/_S
+    suffix is absent. When both are present, they must agree.
+  - The original nki_master.csv is never overwritten.
+  - PAM50 predictions are research-use classifications, not Prosigna results.
+-->
+
+# Analysis overview
+
+This report uses the following inputs:
+
+- `nki_master.csv`
+- `smc_master.csv`
+- `nki_smc_combine_TPM_lognorm.csv`
+- `nki_smc_clusters.csv`
+
+The expression matrix is expected to contain HGNC gene symbols in `gene_id`,
+samples in columns, and log2(TPM + 1) values. NKI expression columns are expected
+to follow the form `2046_B` and `2046_S` (optional `_Rep1` is accepted).
+
+```{r setup}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = TRUE,
+  warning = TRUE,
+  fig.align = "center",
+  dpi = 300
+)
+
+suppressPackageStartupMessages({
+  library(data.table)
+  library(dplyr)
+  library(tidyr)
+  library(stringr)
+  library(tibble)
+  library(ggplot2)
+  library(scales)
+  library(genefu)
+  library(AnnotationDbi)
+  library(org.Hs.eg.db)
+  library(knitr)
+})
+
+set.seed(params$random_seed)
+
+data_dir <- params$data_dir
+results_dir <- params$results_dir
+
+input_paths <- list(
+  nki = file.path(data_dir, "nki_master.csv"),
+  smc = file.path(data_dir, "smc_master.csv"),
+  expression = file.path(data_dir, "nki_smc_combine_TPM_lognorm.csv"),
+  clusters = file.path(data_dir, "nki_smc_clusters.csv")
+)
+
+output_dirs <- list(
+  tables = file.path(results_dir, "tables"),
+  figures = file.path(results_dir, "figures"),
+  qc = file.path(results_dir, "QC")
+)
+
+invisible(lapply(
+  c(results_dir, unname(unlist(output_dirs))),
+  dir.create,
+  recursive = TRUE,
+  showWarnings = FALSE
+))
+
+missing_files <- unlist(input_paths)[!file.exists(unlist(input_paths))]
+if (length(missing_files) > 0L) {
+  stop("Missing input file(s):\n", paste(missing_files, collapse = "\n"))
+}
+
+cluster_levels <- c("Fun-CIM", "Dys-CIM")
+pam50_levels <- c("Basal", "Her2", "LumA", "LumB", "Normal")
+grade_levels <- c("Grade 1", "Grade 2", "Grade 3")
+
+# Colors reproduce the supplied panels, with only publication-quality refinements.
+cluster_colors <- c("Fun-CIM" = "#4FB5AD", "Dys-CIM" = "#ED8588")
+pam50_colors <- c(
+  "Basal" = "#C94F55",
+  "Her2" = "#D98A9B",
+  "LumA" = "#0072B2",
+  "LumB" = "#5A9145",
+  "Normal" = "#8E5BA6"
+)
+grade_colors <- c(
+  "Grade 1" = "#F7BFC2",
+  "Grade 2" = "#E77E82",
+  "Grade 3" = "#CF5055"
+)
+```
+
+# Helper functions
+
+```{r helpers}
+normalize_missing <- function(x) {
+  x <- str_squish(as.character(x))
+  x[x %in% c("", "NA", "N/A", "na", "n/a", "Unknown", "unknown", "999")] <- NA_character_
+  x
+}
+
+first_unique <- function(x, variable, patient) {
+  x <- unique(na.omit(normalize_missing(x)))
+  if (length(x) > 1L) {
+    stop("Conflicting ", variable, " values for patient ", patient, ": ", paste(x, collapse = ", "))
+  }
+  if (length(x) == 0L) NA_character_ else x[[1L]]
+}
+
+time_from_suffix <- function(x) {
+  case_when(
+    str_detect(as.character(x), "_B(?:_Rep\\d+)?$") ~ "B",
+    str_detect(as.character(x), "_S(?:_Rep\\d+)?$") ~ "S",
+    TRUE ~ NA_character_
+  )
+}
+
+smc_stage_from_id <- function(x) {
+  # Legacy SMC collection index: _1 = biopsy; _3 = surgery.
+  case_when(
+    str_detect(as.character(x), "_1(?:_[BS](?:_Rep\\d+)?)?$") ~ "B",
+    str_detect(as.character(x), "_3(?:_[BS](?:_Rep\\d+)?)?$") ~ "S",
+    TRUE ~ NA_character_
+  )
+}
+
+validate_timepoint <- function(explicit, suffix, legacy, sample_id, cohort) {
+  candidates <- unique(na.omit(c(explicit, suffix, legacy)))
+  if (length(candidates) != 1L || !candidates %in% c("B", "S")) {
+    stop(
+      "Timepoint conflict or missing timepoint for ", cohort, " sample ", sample_id,
+      ". Values observed: ", paste(candidates, collapse = ", ")
+    )
+  }
+  candidates[[1L]]
+}
+
+combine_suffix_timepoints <- function(x, y, sample_id) {
+  candidates <- unique(na.omit(c(x, y)))
+  if (length(candidates) > 1L) {
+    stop(
+      "Conflicting _B/_S suffixes across SMC identifiers for sample ",
+      sample_id, ": ", paste(candidates, collapse = ", ")
+    )
+  }
+  if (length(candidates) == 0L) NA_character_ else candidates[[1L]]
+}
+
+clean_pam50 <- function(x) {
+  z <- str_to_lower(str_replace_all(normalize_missing(x), "[^a-zA-Z0-9]", ""))
+  case_when(
+    z %in% c("basal", "basallike") ~ "Basal",
+    z %in% c("her2", "her2enriched", "her2e") ~ "Her2",
+    z %in% c("luma", "luminala") ~ "LumA",
+    z %in% c("lumb", "luminalb") ~ "LumB",
+    z %in% c("normal", "normallike") ~ "Normal",
+    TRUE ~ NA_character_
+  )
+}
+
+clean_grade <- function(x) {
+  z <- str_to_lower(normalize_missing(x))
+  case_when(
+    str_detect(z, "(^|[^0-9])1([^0-9]|$)") ~ "Grade 1",
+    str_detect(z, "(^|[^0-9])2([^0-9]|$)") ~ "Grade 2",
+    str_detect(z, "(^|[^0-9])3([^0-9]|$)") ~ "Grade 3",
+    TRUE ~ NA_character_
+  )
+}
+
+clean_clinical_subtype <- function(x) {
+  z <- str_to_upper(normalize_missing(x))
+  case_when(
+    str_detect(z, "TN|TRIPLE") ~ "TNBC",
+    str_detect(z, "ER") ~ "ER+",
+    TRUE ~ NA_character_
+  )
+}
+
+extract_number <- function(x) {
+  suppressWarnings(as.numeric(str_extract(normalize_missing(x), "-?[0-9]+(?:\\.[0-9]+)?")))
+}
+
+clean_recurrence <- function(x) {
+  z <- str_to_lower(normalize_missing(x))
+  case_when(
+    str_detect(z, "1$|yes|present|positive") ~ "Yes",
+    str_detect(z, "0$|no|absent|negative") ~ "No",
+    TRUE ~ NA_character_
+  )
+}
+
+fmt_pct <- function(x) {
+  ifelse(abs(x - round(x)) < 0.05, sprintf("%.0f", x), sprintf("%.1f", x))
+}
+
+fmt_p <- function(p) {
+  case_when(
+    is.na(p) ~ "NA",
+    p < 0.001 ~ "<0.001",
+    TRUE ~ sprintf("%.3f", p)
+  )
+}
+
+# Type 5 (Hazen) quartiles reproduce the previously reported cohort summaries.
+median_hazen <- function(x, digits = 2L) {
+  x <- suppressWarnings(as.numeric(x))
+  x <- x[is.finite(x)]
+  if (!length(x)) return(NA_character_)
+  q <- quantile(x, c(0.25, 0.75), type = 5, names = FALSE)
+  paste0(
+    formatC(median(x), format = "f", digits = digits), " (",
+    formatC(q[[1L]], format = "f", digits = digits), "–",
+    formatC(q[[2L]], format = "f", digits = digits), ")"
+  )
+}
+
+theme_cimic <- function(base_size = 9) {
+  theme_classic(base_size = base_size) +
+    theme(
+      axis.text = element_text(color = "black", face = "bold"),
+      axis.title = element_text(color = "black", face = "bold"),
+      axis.line = element_line(color = "black", linewidth = 0.55),
+      axis.ticks = element_line(color = "black", linewidth = 0.55),
+      legend.text = element_text(color = "black", face = "bold"),
+      legend.title = element_blank(),
+      plot.title = element_text(face = "bold", hjust = 0.5),
+      plot.margin = margin(5.5, 8, 5.5, 5.5)
+    )
+}
+
+save_figure <- function(plot, filename, width, height) {
+  ggsave(
+    file.path(output_dirs$figures, paste0(filename, ".pdf")),
+    plot, width = width, height = height, units = "in", device = cairo_pdf
+  )
+  ggsave(
+    file.path(output_dirs$figures, paste0(filename, ".tiff")),
+    plot, width = width, height = height, units = "in",
+    dpi = 600, compression = "lzw"
+  )
+}
+```
+
+# Read inputs and validate schemas
+
+```{r read-inputs}
+nki_raw <- fread(input_paths$nki, data.table = FALSE, check.names = FALSE)
+smc_raw <- fread(input_paths$smc, data.table = FALSE, check.names = FALSE)
+expr_raw <- fread(input_paths$expression, data.table = FALSE, check.names = FALSE)
+clusters_raw <- fread(input_paths$clusters, data.table = FALSE, check.names = FALSE)
+
+required_nki <- c(
+  "patient_id", "sample_id", "timepoint", "Stage", "NAC_Response",
+  "Recurrence", "clinical_subtype_ihc", "chemotherapy", "tumor_grade",
+  "node_status_bin", "mib1_pre", "os_event", "rfs_event"
+)
+required_smc <- c(
+  "sample_id", "timepoint", "cluster_match_id", "age", "histological_grade",
+  "nuclear_grade", "tnm_stage_clinical", "lymphovascular_invasion",
+  "clinical_subtype_ihc", "subtype_pam50", "til_density",
+  "proliferative_index", "cyt_score", "chemotherapy", "node_status_bin"
+)
+required_clusters <- c("sample_id", "cluster_assignments", "cohort")
+
+stopifnot(all(required_nki %in% names(nki_raw)))
+stopifnot(all(required_smc %in% names(smc_raw)))
+stopifnot(all(required_clusters %in% names(clusters_raw)))
+stopifnot("gene_id" %in% names(expr_raw))
+
+cluster_map <- clusters_raw %>%
+  transmute(
+    cohort = str_to_upper(str_trim(cohort)),
+    cluster_source_id = as.character(sample_id),
+    cluster_number = as.integer(cluster_assignments),
+    cluster = case_when(
+      cluster_number == 1L ~ "Dys-CIM",
+      cluster_number == 2L ~ "Fun-CIM",
+      TRUE ~ NA_character_
+    )
+  )
+
+if (anyNA(cluster_map$cluster)) stop("Only cluster assignments 1 and 2 are supported.")
+if (anyDuplicated(cluster_map[c("cohort", "cluster_source_id")])) {
+  stop("Duplicated patient entries in nki_smc_clusters.csv.")
+}
+```
+
+# Sample identifier crosswalk
+
+## NKI identifiers
+
+```{r nki-crosswalk}
+nki_crosswalk <- nki_raw %>%
+  transmute(
+    cohort = "NKI",
+    sample_id_original = as.character(sample_id),
+    patient_id_canonical = as.character(patient_id),
+    explicit_timepoint = str_to_upper(str_trim(timepoint)),
+    suffix_timepoint = time_from_suffix(sample_id_original)
+  ) %>%
+  rowwise() %>%
+  mutate(
+    timepoint = validate_timepoint(
+      explicit_timepoint, suffix_timepoint, NA_character_,
+      sample_id_original, cohort
+    ),
+    sample_id_canonical = paste0(patient_id_canonical, "_", timepoint),
+    cluster_source_id = patient_id_canonical
+  ) %>%
+  ungroup() %>%
+  left_join(
+    cluster_map %>% filter(cohort == "NKI") %>% dplyr::select(cluster_source_id, cluster),
+    by = "cluster_source_id"
+  )
+
+if (anyNA(nki_crosswalk$cluster)) stop("At least one NKI clinical sample did not match the cluster file.")
+if (anyDuplicated(nki_crosswalk[c("patient_id_canonical", "timepoint")])) {
+  stop("Duplicated NKI patient/timepoint records detected.")
+}
+```
+
+## SMC identifiers
+
+The stable SMC patient identifier is derived from `cluster_match_id`. For
+example, `15_0139_B_Rep1` and `15_0139_S_Rep1` both map to patient `15_0139`.
+The cluster file identifier `OB_0139` is joined through a validated four-digit
+case suffix. This is safe here only because the suffix is unique in the supplied
+16-patient SMC cohort; uniqueness is tested before joining.
+
+```{r smc-crosswalk}
+smc_cluster_key <- cluster_map %>%
+  filter(cohort == "SMC") %>%
+  mutate(case_suffix4 = str_extract(cluster_source_id, "[0-9]{4}$"))
+
+if (anyNA(smc_cluster_key$case_suffix4) || anyDuplicated(smc_cluster_key$case_suffix4)) {
+  stop("SMC four-digit case suffixes are missing or not unique in the cluster file.")
+}
+
+smc_crosswalk <- smc_raw %>%
+  transmute(
+    cohort = "SMC",
+    sample_id_original = as.character(sample_id),
+    cluster_match_id_original = as.character(cluster_match_id),
+    explicit_timepoint = str_to_upper(str_trim(timepoint)),
+    suffix_timepoint = time_from_suffix(cluster_match_id_original),
+    full_id_timepoint = time_from_suffix(sample_id_original),
+    legacy_timepoint = smc_stage_from_id(str_remove(sample_id_original, "_[BS](?:_Rep\\d+)?$")),
+    patient_id_canonical = str_remove(cluster_match_id_original, "_[BS](?:_Rep\\d+)?$"),
+    case_suffix4 = str_extract(patient_id_canonical, "[0-9]{4}$")
+  ) %>%
+  rowwise() %>%
+  mutate(
+    timepoint = validate_timepoint(
+      explicit_timepoint,
+      combine_suffix_timepoints(
+        suffix_timepoint, full_id_timepoint, sample_id_original
+      ),
+      legacy_timepoint,
+      sample_id_original,
+      cohort
+    ),
+    sample_id_canonical = paste0(patient_id_canonical, "_", timepoint)
+  ) %>%
+  ungroup() %>%
+  left_join(
+    smc_cluster_key %>% dplyr::select(case_suffix4, cluster_source_id, cluster),
+    by = "case_suffix4"
+  )
+
+if (anyNA(smc_crosswalk$cluster)) stop("At least one SMC sample did not match the cluster file.")
+if (anyDuplicated(smc_crosswalk[c("patient_id_canonical", "timepoint")])) {
+  stop("Duplicated SMC patient/timepoint records detected.")
+}
+
+sample_crosswalk <- bind_rows(
+  nki_crosswalk %>%
+    dplyr::select(cohort, sample_id_original, sample_id_canonical,
+           patient_id_canonical, timepoint, cluster_source_id, cluster),
+  smc_crosswalk %>%
+    dplyr::select(cohort, sample_id_original, sample_id_canonical,
+           patient_id_canonical, timepoint, cluster_source_id, cluster)
+) %>%
+  arrange(cohort, patient_id_canonical, timepoint)
+
+write.csv(
+  sample_crosswalk,
+  file.path(output_dirs$qc, "sample_ID_crosswalk.csv"),
+  row.names = FALSE,
+  na = ""
+)
+
+crosswalk_counts <- sample_crosswalk %>%
+  count(cohort, timepoint) %>%
+  pivot_wider(names_from = timepoint, values_from = n, values_fill = 0)
+
+stopifnot(
+  n_distinct(nki_crosswalk$patient_id_canonical) == 20L,
+  n_distinct(smc_crosswalk$patient_id_canonical) == 16L,
+  all(crosswalk_counts$B == c(20L, 16L)),
+  all(crosswalk_counts$S == c(20L, 16L))
+)
+
+kable(crosswalk_counts, caption = "Validated biopsy and surgery sample counts")
+```
+
+# NKI PAM50 classification
+
+PAM50 is calculated only for NKI samples. The analysis uses all NKI biopsy and
+surgery samples together for robust gene-wise scaling, while retaining a
+separate prediction for every sample. Gene symbols are mapped to Entrez IDs for
+the `genefu` PAM50 centroids.
+
+```{r pam50-preparation}
+expression_columns <- setdiff(names(expr_raw), "gene_id")
+
+expression_manifest <- tibble(expression_sample_id = expression_columns) %>%
+  mutate(
+    expression_sample_clean = str_remove(expression_sample_id, "_Rep\\d+$"),
+    timepoint = time_from_suffix(expression_sample_clean),
+    patient_id_canonical = str_remove(expression_sample_clean, "_[BS]$"),
+    sample_id_canonical = paste0(patient_id_canonical, "_", timepoint)
+  )
+
+nki_expression_manifest <- expression_manifest %>%
+  semi_join(
+    nki_crosswalk %>% dplyr::select(sample_id_canonical),
+    by = "sample_id_canonical"
+  ) %>%
+  left_join(
+    nki_crosswalk %>%
+      dplyr::select(sample_id_canonical, patient_id_canonical, timepoint, cluster),
+    by = "sample_id_canonical",
+    suffix = c("_expression", "")
+  )
+
+if (nrow(nki_expression_manifest) != 40L) {
+  stop("Expected 40 matched NKI expression samples; found ", nrow(nki_expression_manifest), ".")
+}
+if (anyDuplicated(nki_expression_manifest$sample_id_canonical)) {
+  stop("Duplicated canonical NKI expression sample IDs detected.")
+}
+
+nki_expr <- expr_raw %>%
+  dplyr::select(gene_id, all_of(nki_expression_manifest$expression_sample_id)) %>%
+  mutate(
+    gene_id = str_trim(as.character(gene_id)),
+    across(-gene_id, ~ suppressWarnings(as.numeric(.x)))
+  ) %>%
+  filter(!is.na(gene_id), gene_id != "")
+
+duplicate_symbols <- nki_expr %>% count(gene_id) %>% filter(n > 1L)
+write.csv(
+  duplicate_symbols,
+  file.path(output_dirs$qc, "NKI_duplicate_gene_symbols.csv"),
+  row.names = FALSE
+)
+
+if (nrow(duplicate_symbols) > 0L) {
+  nki_expr <- nki_expr %>%
+    group_by(gene_id) %>%
+    summarise(across(everything(), ~ median(.x, na.rm = TRUE)), .groups = "drop")
+}
+
+symbol_to_entrez <- AnnotationDbi::mapIds(
+  org.Hs.eg.db,
+  keys = unique(nki_expr$gene_id),
+  keytype = "SYMBOL",
+  column = "ENTREZID",
+  multiVals = "first"
+)
+
+expression_annotation <- tibble(
+  probe = names(symbol_to_entrez),
+  EntrezGene.ID = unname(as.character(symbol_to_entrez))
+) %>%
+  filter(!is.na(EntrezGene.ID), EntrezGene.ID != "")
+
+nki_expr_mapped <- nki_expr %>%
+  semi_join(expression_annotation, by = c("gene_id" = "probe"))
+
+expr_matrix <- nki_expr_mapped %>%
+  column_to_rownames("gene_id") %>%
+  as.matrix()
+storage.mode(expr_matrix) <- "numeric"
+
+# genefu requires samples in rows and genes/probes in columns.
+expr_genefu <- t(expr_matrix)
+
+annot_genefu <- expression_annotation %>%
+  filter(probe %in% colnames(expr_genefu)) %>%
+  distinct(probe, .keep_all = TRUE) %>%
+  as.data.frame()
+rownames(annot_genefu) <- annot_genefu$probe
+annot_genefu <- annot_genefu[colnames(expr_genefu), , drop = FALSE]
+
+stopifnot(identical(colnames(expr_genefu), rownames(annot_genefu)))
+```
+
+```{r run-pam50}
+data("pam50.robust", package = "genefu")
+
+pam50_fit <- genefu::intrinsic.cluster.predict(
+  sbt.model = pam50.robust,
+  data = expr_genefu,
+  annot = annot_genefu,
+  do.mapping = TRUE,
+  do.prediction.strength = FALSE,
+  verbose = TRUE
+)
+
+pam50_mapped_genes <- as.data.frame(pam50_fit$centroids.map)
+pam50_gene_n <- nrow(pam50_mapped_genes)
+
+write.csv(
+  pam50_mapped_genes,
+  file.path(output_dirs$qc, "NKI_PAM50_mapped_genes.csv"),
+  row.names = FALSE
+)
+
+if (pam50_gene_n < 45L) {
+  stop(
+    "Only ", pam50_gene_n,
+    " PAM50 genes mapped. Review NKI_PAM50_mapped_genes.csv before interpretation."
+  )
+}
+
+pam50_correlations <- as.data.frame(pam50_fit$cor) %>%
+  rownames_to_column("expression_sample_id") %>%
+  rename_with(~ paste0("pam50_cor_", .x), -expression_sample_id)
+
+pam50_predictions <- tibble(
+  expression_sample_id = names(pam50_fit$subtype),
+  pam50_subtype = clean_pam50(unname(pam50_fit$subtype))
+) %>%
+  left_join(pam50_correlations, by = "expression_sample_id") %>%
+  left_join(
+    nki_expression_manifest %>%
+      dplyr::select(expression_sample_id, sample_id_canonical,
+             patient_id_canonical, timepoint, cluster),
+    by = "expression_sample_id"
+  ) %>%
+  relocate(patient_id_canonical, timepoint, sample_id_canonical,
+           expression_sample_id, cluster, pam50_subtype)
+
+if (anyNA(pam50_predictions$pam50_subtype)) {
+  stop("At least one NKI PAM50 prediction is missing.")
+}
+
+write.csv(
+  pam50_predictions,
+  file.path(output_dirs$tables, "NKI_PAM50_predictions.csv"),
+  row.names = FALSE,
+  na = ""
+)
+
+kable(
+  pam50_predictions %>% count(timepoint, pam50_subtype),
+  caption = paste0("NKI PAM50 predictions; ", pam50_gene_n, " PAM50 genes mapped")
+)
+```
+
+# Add PAM50 to a new NKI master
+
+```{r augment-nki-master}
+nki_augmented <- nki_raw %>%
+  left_join(
+    nki_crosswalk %>%
+      dplyr::transmute(
+        sample_id_original,
+        patient_id_canonical,
+        timepoint_validated = timepoint,
+        sample_id_canonical,
+        cluster
+      ),
+    by = c("sample_id" = "sample_id_original")
+  ) %>%
+  # Preserve the original clinical timepoint for provenance, but use the
+  # crosswalk-validated value for all downstream matching.
+  mutate(
+    timepoint_original = timepoint,
+    timepoint = timepoint_validated
+  ) %>%
+  dplyr::select(-timepoint_validated) %>%
+  left_join(
+    pam50_predictions %>%
+      dplyr::select(patient_id_canonical, timepoint, pam50_subtype,
+             starts_with("pam50_cor_")),
+    by = c("patient_id_canonical", "timepoint")
+  )
+
+if (anyNA(nki_augmented$pam50_subtype)) {
+  stop("PAM50 did not merge into every NKI clinical row.")
+}
+
+nki_augmented_path <- file.path(data_dir, "nki_master_with_genefu_PAM50.csv")
+fwrite(nki_augmented, nki_augmented_path, na = "")
+```
+
+# Construct one-row-per-patient datasets
+
+## NKI patient dataset
+
+```{r nki-patient-data}
+nki_long <- nki_augmented %>%
+  mutate(
+    tumor_grade_clean = clean_grade(tumor_grade),
+    tumor_stage_clean = as.character(extract_number(Stage)),
+    clinical_subtype_clean = clean_clinical_subtype(clinical_subtype_ihc),
+    nri_value = extract_number(str_extract(NAC_Response, "[0-9]+(?:\\.[0-9]+)?$")),
+    recurrence_clean = clean_recurrence(Recurrence),
+    chemotherapy_clean = str_squish(chemotherapy),
+    node_status_clean = normalize_missing(node_status_bin),
+    mib1_pre_numeric = suppressWarnings(as.numeric(mib1_pre))
+  )
+
+nki_static <- nki_long %>%
+  group_by(patient_id_canonical) %>%
+  summarise(
+    cohort = "NKI",
+    cluster = first_unique(cluster, "cluster", cur_group_id()),
+    tumor_grade = first_unique(tumor_grade_clean, "tumor grade", cur_group_id()),
+    tumor_stage = first_unique(tumor_stage_clean, "tumor stage", cur_group_id()),
+    clinical_subtype_ihc = first_unique(clinical_subtype_clean, "clinical subtype", cur_group_id()),
+    NRI_value = suppressWarnings(as.numeric(first_unique(nri_value, "NRI", cur_group_id()))),
+    recurrence = first_unique(recurrence_clean, "recurrence", cur_group_id()),
+    chemotherapy = first_unique(chemotherapy_clean, "chemotherapy", cur_group_id()),
+    node_status = first_unique(node_status_clean, "node status", cur_group_id()),
+    mib1_pre = suppressWarnings(as.numeric(first_unique(mib1_pre_numeric, "MIB1", cur_group_id()))),
+    os_event = suppressWarnings(as.integer(first_unique(os_event, "OS event", cur_group_id()))),
+    rfs_event = suppressWarnings(as.integer(first_unique(rfs_event, "RFS event", cur_group_id()))),
+    .groups = "drop"
+  )
+
+nki_timepoint <- nki_long %>%
+  dplyr::select(patient_id_canonical, timepoint, pam50_subtype) %>%
+  pivot_wider(names_from = timepoint, values_from = pam50_subtype,
+              names_prefix = "pam50_")
+
+nki_patient <- nki_static %>%
+  left_join(nki_timepoint, by = "patient_id_canonical")
+
+stopifnot(nrow(nki_patient) == 20L, !anyNA(nki_patient$pam50_B), !anyNA(nki_patient$pam50_S))
+```
+
+## SMC patient dataset
+
+```{r smc-patient-data}
+smc_long <- smc_raw %>%
+  left_join(
+    smc_crosswalk %>%
+      dplyr::select(sample_id_original, patient_id_canonical, timepoint,
+             sample_id_canonical, cluster),
+    by = c("sample_id" = "sample_id_original"),
+    suffix = c("_source", "")
+  ) %>%
+  mutate(
+    tumor_grade_clean = clean_grade(histological_grade),
+    nuclear_grade_clean = clean_grade(nuclear_grade),
+    clinical_subtype_clean = clean_clinical_subtype(clinical_subtype_ihc),
+    pam50_clean = clean_pam50(subtype_pam50),
+    chemotherapy_clean = str_squish(chemotherapy),
+    node_status_clean = normalize_missing(node_status_bin)
+  )
+
+smc_static <- smc_long %>%
+  group_by(patient_id_canonical) %>%
+  summarise(
+    cohort = "SMC",
+    cluster = first_unique(cluster, "cluster", cur_group_id()),
+    age = suppressWarnings(as.numeric(first_unique(age, "age", cur_group_id()))),
+    tumor_grade = first_unique(tumor_grade_clean, "histological grade", cur_group_id()),
+    nuclear_grade = first_unique(nuclear_grade_clean, "nuclear grade", cur_group_id()),
+    tumor_stage = first_unique(tnm_stage_clinical, "clinical TNM stage", cur_group_id()),
+    lymphovascular_invasion = first_unique(lymphovascular_invasion, "LVI", cur_group_id()),
+    clinical_subtype_ihc = first_unique(clinical_subtype_clean, "clinical subtype", cur_group_id()),
+    chemotherapy = first_unique(chemotherapy_clean, "chemotherapy", cur_group_id()),
+    node_status = first_unique(node_status_clean, "node status", cur_group_id()),
+    .groups = "drop"
+  )
+
+smc_timepoint <- smc_long %>%
+  dplyr::select(
+    patient_id_canonical, timepoint, pam50_clean, til_density,
+    proliferative_index, cyt_score
+  ) %>%
+  pivot_wider(
+    names_from = timepoint,
+    values_from = c(pam50_clean, til_density, proliferative_index, cyt_score),
+    names_glue = "{.value}_{timepoint}"
+  )
+
+required_smc_wide_columns <- c(
+  "pam50_clean_B", "pam50_clean_S",
+  "til_density_B", "til_density_S",
+  "proliferative_index_B", "proliferative_index_S",
+  "cyt_score_B", "cyt_score_S"
+)
+
+missing_smc_wide_columns <- setdiff(required_smc_wide_columns, names(smc_timepoint))
+if (length(missing_smc_wide_columns) > 0L) {
+  stop(
+    "SMC biopsy/surgery pivot did not create the expected columns: ",
+    paste(missing_smc_wide_columns, collapse = ", "),
+    ". Check the validated timepoint column before continuing."
+  )
+}
+
+smc_timepoint <- smc_timepoint %>%
+  dplyr::rename(
+    pam50_B = pam50_clean_B,
+    pam50_S = pam50_clean_S
+  )
+
+smc_patient <- smc_static %>%
+  left_join(smc_timepoint, by = "patient_id_canonical")
+
+stopifnot(nrow(smc_patient) == 16L, !anyNA(smc_patient$pam50_B), !anyNA(smc_patient$pam50_S))
+```
+
+## Combined patient dataset
+
+```{r combined-patient-data}
+common_variables <- c(
+  "patient_id_canonical", "cohort", "cluster", "tumor_grade",
+  "clinical_subtype_ihc", "chemotherapy", "node_status", "pam50_B", "pam50_S"
+)
+
+clinical_patient <- bind_rows(
+  nki_patient %>% dplyr::select(all_of(common_variables)),
+  smc_patient %>% dplyr::select(all_of(common_variables))
+) %>%
+  mutate(
+    cluster = factor(cluster, levels = cluster_levels),
+    tumor_grade = factor(tumor_grade, levels = grade_levels),
+    pam50_B = factor(pam50_B, levels = pam50_levels),
+    pam50_S = factor(pam50_S, levels = pam50_levels),
+    clinical_subtype_ihc = factor(clinical_subtype_ihc, levels = c("ER+", "TNBC"))
+  )
+
+stopifnot(
+  nrow(clinical_patient) == 36L,
+  n_distinct(clinical_patient$patient_id_canonical) == 36L,
+  sum(clinical_patient$cluster == "Fun-CIM") == 25L,
+  sum(clinical_patient$cluster == "Dys-CIM") == 11L
+)
+
+write.csv(
+  clinical_patient,
+  file.path(output_dirs$tables, "patient_level_clinical_data.csv"),
+  row.names = FALSE,
+  na = ""
+)
+
+kable(
+  clinical_patient %>% count(cohort, cluster),
+  caption = "Validated patient counts by cohort and CIM state"
+)
+```
+
+# Descriptive table functions
+
+```{r table-helpers}
+categorical_rows <- function(df, variable, label, include_missing = FALSE,
+                             level_order = NULL) {
+  x <- as.character(df[[variable]])
+  if (include_missing) x[is.na(x) | x == ""] <- "Missing"
+  denominator <- if (include_missing) length(x) else sum(!is.na(x) & x != "")
+  x <- x[!is.na(x) & x != ""]
+
+  out <- tibble(Level = x) %>%
+    count(Level, name = "n") %>%
+    mutate(
+      denominator = denominator,
+      percent = 100 * n / denominator,
+      Value = paste0(n, " (", fmt_pct(percent), "%)")
+    )
+
+  if (!is.null(level_order)) {
+    out <- out %>%
+      mutate(Level = factor(Level, levels = level_order)) %>%
+      arrange(Level) %>%
+      mutate(Level = as.character(Level))
+  }
+
+  out %>% transmute(Variable = label, Level, Value, Available_N = denominator)
+}
+
+continuous_row <- function(df, variable, label) {
+  x <- suppressWarnings(as.numeric(df[[variable]]))
+  tibble(
+    Variable = label,
+    Level = "Median (Q1–Q3)",
+    Value = median_hazen(x),
+    Available_N = sum(is.finite(x))
+  )
+}
+
+event_row <- function(df, variable, label, event = "Yes") {
+  x <- as.character(df[[variable]])
+  denominator <- sum(!is.na(x))
+  n <- sum(x == event, na.rm = TRUE)
+  tibble(
+    Variable = label,
+    Level = event,
+    Value = paste0(n, " (", fmt_pct(100 * n / denominator), "%)"),
+    Available_N = denominator
+  )
+}
+```
+
+# Table 1: NKI patient demographics
+
+```{r table-1-nki}
+table_1_nki <- bind_rows(
+  categorical_rows(nki_patient, "tumor_grade", "Tumor Grade, n (%)", TRUE,
+                   c(grade_levels, "Missing")),
+  categorical_rows(nki_patient, "tumor_stage", "Tumor Stage, n (%)", FALSE,
+                   c("1", "2", "3", "4")),
+  categorical_rows(nki_patient, "clinical_subtype_ihc", "Clinical Subtype, n (%)", FALSE,
+                   c("ER+", "TNBC")),
+  categorical_rows(nki_patient, "pam50_B", "PAM50 Subtype – Biopsy, n (%)", FALSE,
+                   pam50_levels),
+  categorical_rows(nki_patient, "pam50_S", "PAM50 Subtype – Surgery, n (%)", FALSE,
+                   pam50_levels),
+  categorical_rows(nki_patient, "NRI_value", "NRI Value, n (%)"),
+  event_row(nki_patient, "recurrence", "Recurrence, n (%)"),
+  categorical_rows(nki_patient, "chemotherapy", "Chemotherapy Regimen, n (%)"),
+  categorical_rows(nki_patient, "node_status", "Node Status, n (%)", FALSE, c("N0", "N+")),
+  continuous_row(nki_patient, "mib1_pre", "MIB1/Ki67 Pretreatment")
+) %>%
+  mutate(Cohort = "NKI cohort; N = 20 (100%)", .before = 1)
+
+write.csv(
+  table_1_nki,
+  file.path(output_dirs$tables, "Table_1_NKI_demographics.csv"),
+  row.names = FALSE,
+  na = ""
+)
+
+kable(table_1_nki, caption = "Table 1. Patient demographics within the NKI cohort")
+```
+
+# Table 2: SMC patient demographics
+
+The values previously labeled “Ki67” are generated by `proliferative_index`.
+They are therefore reported here using the accurate label **Proliferative
+Index**. The mixed-format `ki67_diagnosis` and `ki67_surgery` variables are not
+converted without a prespecified conversion rule.
+
+```{r table-2-smc}
+table_2_smc <- bind_rows(
+  continuous_row(smc_patient, "age", "Age (years)"),
+  categorical_rows(smc_patient, "tumor_grade", "Histological Grade, n (%)", FALSE,
+                   grade_levels),
+  categorical_rows(smc_patient, "nuclear_grade", "Nuclear Grade, n (%)"),
+  categorical_rows(smc_patient, "tumor_stage", "Tumor Stage, n (%)"),
+  categorical_rows(smc_patient, "lymphovascular_invasion", "Lymphovascular Invasion, n (%)",
+                   FALSE, c("0", "1")),
+  categorical_rows(smc_patient, "clinical_subtype_ihc", "Clinical Subtype, n (%)", FALSE,
+                   c("ER+", "TNBC")),
+  categorical_rows(smc_patient, "pam50_B", "PAM50 Subtype – Biopsy, n (%)", FALSE,
+                   pam50_levels),
+  categorical_rows(smc_patient, "pam50_S", "PAM50 Subtype – Surgery, n (%)", FALSE,
+                   pam50_levels),
+  continuous_row(smc_patient, "til_density_B", "TIL Density – Biopsy"),
+  continuous_row(smc_patient, "til_density_S", "TIL Density – Surgery"),
+  continuous_row(smc_patient, "proliferative_index_B", "Proliferative Index – Biopsy"),
+  continuous_row(smc_patient, "proliferative_index_S", "Proliferative Index – Surgery"),
+  continuous_row(smc_patient, "cyt_score_B", "Cytolytic Score – Biopsy"),
+  continuous_row(smc_patient, "cyt_score_S", "Cytolytic Score – Surgery"),
+  categorical_rows(smc_patient, "chemotherapy", "Chemotherapy Regimen, n (%)"),
+  categorical_rows(smc_patient, "node_status", "Node Status, n (%)", FALSE, c("N0", "N+"))
+) %>%
+  mutate(Cohort = "SMC cohort; N = 16 (100%)", .before = 1)
+
+write.csv(
+  table_2_smc,
+  file.path(output_dirs$tables, "Table_2_SMC_demographics.csv"),
+  row.names = FALSE,
+  na = ""
+)
+
+kable(table_2_smc, caption = "Table 2. Patient demographics within the SMC cohort")
+```
+
+# Table 3: Combined cohort demographics
+
+Only variables with directly harmonized definitions in both cohorts are pooled.
+NKI T stage is not pooled with SMC full cTNM stage; NRI, recurrence, TIL density,
+and cytolytic score remain cohort-specific.
+
+```{r table-3-combined}
+combined_variables <- tribble(
+  ~variable, ~label, ~levels,
+  "cluster", "CIM State, n (%)", list(cluster_levels),
+  "clinical_subtype_ihc", "Clinical Subtype, n (%)", list(c("ER+", "TNBC")),
+  "pam50_B", "PAM50 Subtype – Biopsy, n (%)", list(pam50_levels),
+  "pam50_S", "PAM50 Subtype – Surgery, n (%)", list(pam50_levels),
+  "tumor_grade", "Tumor Grade, n (%)", list(grade_levels),
+  "node_status", "Node Status, n (%)", list(c("N0", "N+")),
+  "chemotherapy", "Chemotherapy Regimen, n (%)", list(NULL)
+)
+
+make_combined_section <- function(variable, label, levels) {
+  overall <- categorical_rows(clinical_patient, variable, label, FALSE, levels) %>%
+    dplyr::select(Variable, Level, Overall = Value)
+  nki <- categorical_rows(clinical_patient %>% filter(cohort == "NKI"),
+                          variable, label, FALSE, levels) %>%
+    dplyr::select(Level, NKI = Value)
+  smc <- categorical_rows(clinical_patient %>% filter(cohort == "SMC"),
+                          variable, label, FALSE, levels) %>%
+    dplyr::select(Level, SMC = Value)
+  full_join(overall, nki, by = "Level") %>%
+    full_join(smc, by = "Level") %>%
+    mutate(Variable = coalesce(Variable, label))
+}
+
+table_3_combined <- bind_rows(lapply(seq_len(nrow(combined_variables)), function(i) {
+  make_combined_section(
+    combined_variables$variable[[i]],
+    combined_variables$label[[i]],
+    combined_variables$levels[[i]]
+  )
+}))
+
+write.csv(
+  table_3_combined,
+  file.path(output_dirs$tables, "Table_3_combined_demographics.csv"),
+  row.names = FALSE,
+  na = ""
+)
+
+kable(
+  table_3_combined,
+  caption = "Table 3. Combined demographics: overall, NKI, and SMC"
+)
+```
+
+# Statistical analysis: Fun-CIM versus Dys-CIM
+
+Categorical associations are evaluated using two-sided Fisher’s exact tests for
+2 × 2 tables and Fisher–Freeman–Halton exact tests for larger tables. Exact
+enumeration is attempted first. Monte Carlo estimation is used only when exact
+enumeration fails computationally. The final Monte Carlo analysis uses the
+configured fixed seed and 1,000,000 replicates by default.
+
+```{r statistical-functions}
+cramers_v <- function(tab) {
+  chi <- suppressWarnings(chisq.test(tab, correct = FALSE)$statistic)
+  n <- sum(tab)
+  denom <- min(nrow(tab) - 1L, ncol(tab) - 1L)
+  if (denom <= 0L) return(NA_real_)
+  as.numeric(sqrt(chi / (n * denom)))
+}
+
+serialize_table <- function(tab) {
+  paste(
+    apply(as.matrix(tab), 1, function(x) paste(x, collapse = ",")),
+    collapse = ";"
+  )
+}
+
+run_categorical_test <- function(df, variable, label) {
+  test_df <- df %>%
+    filter(!is.na(cluster), !is.na(.data[[variable]])) %>%
+    transmute(
+      cluster = droplevels(factor(cluster, levels = cluster_levels)),
+      value = droplevels(factor(.data[[variable]]))
+    )
+
+  tab <- table(test_df$cluster, test_df$value)
+  if (nrow(tab) < 2L || ncol(tab) < 2L) stop(label, " is not testable.")
+
+  expected <- suppressWarnings(chisq.test(tab, correct = FALSE)$expected)
+  monte_carlo_used <- FALSE
+  B_used <- NA_integer_
+  seed_used <- NA_integer_
+
+  if (identical(dim(tab), c(2L, 2L))) {
+    fit <- fisher.test(tab, alternative = "two.sided")
+    test_used <- "Two-sided Fisher's exact test"
+    effect_name <- "Odds ratio"
+    effect_value <- unname(fit$estimate)
+    ci_low <- fit$conf.int[[1L]]
+    ci_high <- fit$conf.int[[2L]]
+    statistic_name <- NA_character_
+    statistic_value <- NA_real_
+    reason <- "A 2 x 2 table with at least one expected count below 5."
+  } else {
+    exact_fit <- tryCatch(
+      fisher.test(tab, hybrid = FALSE, workspace = 2e7),
+      error = function(e) e
+    )
+
+    if (inherits(exact_fit, "error")) {
+      set.seed(params$random_seed)
+      fit <- fisher.test(
+        tab,
+        simulate.p.value = TRUE,
+        B = params$monte_carlo_B
+      )
+      monte_carlo_used <- TRUE
+      B_used <- params$monte_carlo_B
+      seed_used <- params$random_seed
+      test_used <- "Fisher-Freeman-Halton test; Monte Carlo p-value"
+      reason <- paste0(
+        "Sparse ", nrow(tab), " x ", ncol(tab),
+        " table; exact enumeration failed computationally."
+      )
+    } else {
+      fit <- exact_fit
+      test_used <- "Fisher-Freeman-Halton exact test"
+      reason <- paste0(
+        "Sparse ", nrow(tab), " x ", ncol(tab),
+        " table; exact conditional inference was feasible."
+      )
+    }
+
+    effect_name <- "Cramer's V"
+    effect_value <- cramers_v(tab)
+    ci_low <- NA_real_
+    ci_high <- NA_real_
+    statistic_name <- NA_character_
+    statistic_value <- NA_real_
+  }
+
+  tibble(
+    analysis_id = paste0("CIM_", variable),
+    analysis_group = "Clinical characteristics",
+    variable = variable,
+    variable_label = label,
+    comparison = "Fun-CIM versus Dys-CIM",
+    total_n = nrow(test_df),
+    fun_cim_n = sum(test_df$cluster == "Fun-CIM"),
+    dys_cim_n = sum(test_df$cluster == "Dys-CIM"),
+    missing_n = nrow(df) - nrow(test_df),
+    table_dimensions = paste(nrow(tab), "x", ncol(tab)),
+    category_levels = paste(colnames(tab), collapse = " | "),
+    contingency_table_row_order = paste(rownames(tab), collapse = " | "),
+    contingency_table_counts = serialize_table(tab),
+    minimum_expected_count = min(expected),
+    cells_expected_below_5_n = sum(expected < 5),
+    cells_expected_below_5_percent = 100 * mean(expected < 5),
+    test_used = test_used,
+    test_reason = reason,
+    statistic_name = statistic_name,
+    statistic_value = statistic_value,
+    effect_size_name = effect_name,
+    effect_size_value = effect_value,
+    ci_95_lower = ci_low,
+    ci_95_upper = ci_high,
+    p_value_raw = unname(fit$p.value),
+    monte_carlo_used = if_else(monte_carlo_used, "Yes", "No"),
+    monte_carlo_replicates = B_used,
+    random_seed = seed_used
+  )
+}
+```
+
+```{r run-statistical-tests}
+test_specifications <- tribble(
+  ~variable, ~label,
+  "cohort", "Cohort",
+  "clinical_subtype_ihc", "Clinical Subtype (IHC)",
+  "pam50_B", "PAM50 Subtype (Biopsy)",
+  "pam50_S", "PAM50 Subtype (Surgery)",
+  "tumor_grade", "Tumor Grade",
+  "node_status", "Node Status",
+  "chemotherapy", "Chemotherapy Regimen"
+)
+
+statistical_tests <- bind_rows(lapply(seq_len(nrow(test_specifications)), function(i) {
+  run_categorical_test(
+    clinical_patient,
+    test_specifications$variable[[i]],
+    test_specifications$label[[i]]
+  )
+})) %>%
+  mutate(p_value_BH = p.adjust(p_value_raw, method = "BH"))
+
+write.csv(
+  statistical_tests,
+  file.path(output_dirs$tables, "Table_4_statistical_tests.csv"),
+  row.names = FALSE,
+  na = ""
+)
+
+kable(
+  statistical_tests %>%
+    dplyr::select(variable_label, total_n, table_dimensions, test_used,
+           effect_size_name, effect_size_value, p_value_raw, p_value_BH),
+  digits = 4,
+  caption = "Statistical audit for Fun-CIM versus Dys-CIM analyses"
+)
+```
+
+# Table 4: Clinical characteristics of Fun-CIM and Dys-CIM tumors
+
+P-values are displayed on the main characteristic row and refer to the entire
+contingency table. Test-specific markers and notes are generated from the tests
+actually used rather than hard-coded in advance.
+
+```{r table-4}
+test_marker_key <- statistical_tests %>%
+  distinct(test_used, monte_carlo_replicates, random_seed) %>%
+  arrange(test_used) %>%
+  mutate(test_marker = seq_len(n()))
+
+statistical_tests <- statistical_tests %>%
+  left_join(test_marker_key, by = c("test_used", "monte_carlo_replicates", "random_seed"))
+
+make_table4_section <- function(variable_name, label) {
+  test_row <- statistical_tests %>%
+    dplyr::filter(.data$variable == .env$variable_name)
+
+  if (nrow(test_row) != 1L) {
+    stop(
+      "Could not resolve exactly one Table 4 test for ", variable_name,
+      ". Matches found: ", nrow(test_row), "."
+    )
+  }
+
+  counts <- clinical_patient %>%
+    dplyr::filter(!is.na(cluster), !is.na(.data[[variable_name]])) %>%
+    dplyr::count(cluster, Level = .data[[variable_name]], name = "n") %>%
+    group_by(cluster) %>%
+    mutate(
+      denominator = sum(n),
+      percent = 100 * n / denominator,
+      display = paste0(n, " (", fmt_pct(percent), "%)")
+    ) %>%
+    ungroup() %>%
+    dplyr::select(cluster, Level, display) %>%
+    pivot_wider(names_from = cluster, values_from = display, values_fill = "0 (0%)")
+
+  header <- tibble(
+    Variable = paste0(label, " [", test_row$test_marker, "]"),
+    Level = "",
+    `Fun-CIM` = "",
+    `Dys-CIM` = "",
+    `P-value` = fmt_p(test_row$p_value_raw),
+    Available_N = test_row$total_n
+  )
+
+  levels <- counts %>%
+    transmute(
+      Variable = "",
+      Level = as.character(Level),
+      `Fun-CIM`,
+      `Dys-CIM`,
+      `P-value` = "",
+      Available_N = test_row$total_n
+    )
+
+  bind_rows(header, levels)
+}
+
+table_4_body <- bind_rows(lapply(seq_len(nrow(test_specifications)), function(i) {
+  make_table4_section(
+    test_specifications$variable[[i]],
+    test_specifications$label[[i]]
+  )
+}))
+
+fun_n <- sum(clinical_patient$cluster == "Fun-CIM")
+dys_n <- sum(clinical_patient$cluster == "Dys-CIM")
+total_n <- fun_n + dys_n
+
+names(table_4_body)[names(table_4_body) == "Fun-CIM"] <- paste0(
+  "Functional-CIM; N = ", fun_n, " (", fmt_pct(100 * fun_n / total_n), "%)"
+)
+names(table_4_body)[names(table_4_body) == "Dys-CIM"] <- paste0(
+  "Dysfunctional-CIM; N = ", dys_n, " (", fmt_pct(100 * dys_n / total_n), "%)"
+)
+
+fun_col <- names(table_4_body)[str_detect(names(table_4_body), "^Functional-CIM")]
+dys_col <- names(table_4_body)[str_detect(names(table_4_body), "^Dysfunctional-CIM")]
+
+test_footnotes <- test_marker_key %>%
+  transmute(
+    Variable = paste0("Footnote [", test_marker, "]"),
+    Level = case_when(
+      str_detect(test_used, "Monte Carlo") ~ paste0(
+        test_used, "; ", format(monte_carlo_replicates, scientific = FALSE),
+        " replicates; seed = ", random_seed, "."
+      ),
+      TRUE ~ paste0(test_used, ".")
+    ),
+    !!fun_col := "",
+    !!dys_col := "",
+    `P-value` = "",
+    Available_N = NA_integer_
+  )
+
+general_notes <- tibble(
+  Variable = c("General note", "General note"),
+  Level = c(
+    "Data are n (%). Percentages use the available nonmissing denominator within each CIM group.",
+    "P-values are raw, two-sided values. BH-adjusted values and complete diagnostics are in Table_4_statistical_tests.csv."
+  ),
+  !!fun_col := "",
+  !!dys_col := "",
+  `P-value` = "",
+  Available_N = NA_integer_
+)
+
+table_4_export <- bind_rows(table_4_body, test_footnotes, general_notes)
+
+write.csv(
+  table_4_export,
+  file.path(output_dirs$tables, "Table_4_Fun_CIM_vs_Dys_CIM.csv"),
+  row.names = FALSE,
+  na = ""
+)
+
+kable(
+  table_4_export,
+  caption = "Table 4. Clinical characteristics of Fun-CIM and Dys-CIM tumors"
+)
+```
+
+# Clinical figures generation
+
+figure aesthetics:
+
+- 5 × 5.5 inch canvas;
+- 100% stacked bars with width 0.85;
+- 18-point bold axes and legends;
+- 20-point bold centered titles;
+- count and percentage labels within every nonzero segment;
+- sample size below each bar at y = -8;
+- p-value centered at y = 110;
+- y-axis range from -15 to 117;
+- black panel border and bold black axes;
+- the original CIM, PAM50, and grade palettes.
+
+Quality improvements are limited to explicit namespaces, modern `linewidth`
+arguments, consistent p-value formatting, and vector/600-dpi export.
+
+## Plot helpers matching the original style
+
+```{r plot-function}
+manual_plot_width <- 5
+manual_plot_height <- 5.5
+manual_plot_dpi <- 600
+
+# Original manuscript colors supplied with the reference plots.
+cim_plot_colors <- c("Fun-CIM" = "#4DB6AC", "Dys-CIM" = "#F08A8A")
+pam50_plot_colors <- c(
+  "Basal" = "#C44E52",
+  "Her2" = "#DD8DA6",
+  "LumA" = "#0072B2",
+  "LumB" = "#5C8C45",
+  "Normal" = "#9467BD"
+)
+grade_plot_colors <- c(
+  "Grade 1" = "#FFC5C5",
+  "Grade 2" = "#F08A8A",
+  "Grade 3" = "#D95F5F"
+)
+
+plot_p_value <- function(variable_name) {
+  value <- statistical_tests %>%
+    dplyr::filter(.data$variable == .env$variable_name) %>%
+    dplyr::pull(p_value_raw)
+  if (length(value) != 1L) {
+    stop(
+      "Could not resolve exactly one p-value for ", variable_name,
+      ". Matches found: ", length(value), "."
+    )
+  }
+  value
+}
+
+format_plot_p <- function(p) {
+  if (is.na(p)) return("P = NA")
+  if (p < 0.001) return("P < 0.001")
+  paste0("P = ", format(round(p, 4), nsmall = 4, scientific = FALSE))
+}
+
+create_stack_plot_matched_style <- function(
+    df,
+    outcome_var,
+    title,
+    colors,
+    category_levels = NULL,
+    x_title = "") {
+
+  clean_data <- df %>%
+    dplyr::select(cluster, dplyr::all_of(outcome_var)) %>%
+    dplyr::filter(
+      !is.na(cluster),
+      !is.na(.data[[outcome_var]]),
+      as.character(.data[[outcome_var]]) != "",
+      as.character(.data[[outcome_var]]) != "NA"
+    ) %>%
+    dplyr::mutate(
+      cluster = factor(cluster, levels = cluster_levels),
+      category = as.character(.data[[outcome_var]])
+    )
+
+  if (!is.null(category_levels)) {
+    clean_data <- clean_data %>%
+      dplyr::mutate(category = factor(category, levels = category_levels))
+  }
+
+  if (nrow(clean_data) == 0L) return(NULL)
+
+  tab_n <- table(clean_data$cluster, clean_data$category)
+  if (nrow(tab_n) < 2L || ncol(tab_n) < 2L) return(NULL)
+
+  plot_data <- as.data.frame(prop.table(tab_n, margin = 1) * 100)
+  names(plot_data) <- c("Cluster", "Category", "Percentage")
+
+  count_data <- as.data.frame(tab_n)
+  names(count_data) <- c("Cluster", "Category", "n")
+
+  plot_data <- plot_data %>%
+    dplyr::left_join(count_data, by = c("Cluster", "Category")) %>%
+    dplyr::mutate(
+      Percentage = round(Percentage, 1),
+      label = dplyr::if_else(
+        Percentage > 0,
+        paste0(n, " (", fmt_pct(Percentage), "%)"),
+        ""
+      ),
+      Cluster = factor(Cluster, levels = cluster_levels),
+      Category = if (is.null(category_levels)) {
+        factor(Category)
+      } else {
+        factor(Category, levels = category_levels)
+      }
+    )
+
+  labels_df <- clean_data %>%
+    dplyr::count(cluster, name = "N") %>%
+    dplyr::transmute(
+      x = factor(cluster, levels = cluster_levels),
+      y = -8,
+      label = paste0("N = ", N)
+    )
+
+  p_lab <- format_plot_p(plot_p_value(outcome_var))
+
+  ggplot(plot_data, aes(x = Cluster, y = Percentage, fill = Category)) +
+    geom_col(width = 0.85) +
+    geom_text(
+      aes(label = label),
+      position = position_stack(vjust = 0.5),
+      size = 5,
+      color = "black",
+      fontface = "bold"
+    ) +
+    geom_text(
+      data = labels_df,
+      aes(x = x, y = y, label = label),
+      inherit.aes = FALSE,
+      size = 5,
+      color = "black",
+      fontface = "bold"
+    ) +
+    annotate(
+      "text", x = 1.5, y = 110, label = p_lab,
+      size = 5, fontface = "bold"
+    ) +
+    scale_fill_manual(values = colors, drop = FALSE) +
+    scale_y_continuous(
+      limits = c(-15, 117),
+      breaks = seq(0, 100, 20),
+      expand = expansion(mult = c(0, 0))
+    ) +
+    scale_x_discrete(expand = expansion(mult = c(0.55, 0.55))) +
+    labs(x = x_title, y = "Percentage (%)", fill = NULL, title = title) +
+    theme_classic() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+      axis.text = element_text(color = "black", size = 18, face = "bold"),
+      axis.title = element_text(color = "black", size = 18, face = "bold"),
+      axis.title.x = element_text(margin = margin(t = 10)),
+      axis.ticks = element_line(linewidth = 1.5),
+      legend.text = element_text(color = "black", size = 18, face = "bold"),
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      legend.position = "right",
+      legend.direction = "vertical"
+    ) +
+    guides(fill = guide_legend(
+      title = NULL,
+      keywidth = grid::unit(1, "cm"),
+      keyheight = grid::unit(0.8, "cm")
+    ))
+}
+
+create_cim_by_clinical_subtype_plot <- function(
+    df,
+    title = "CIM Cluster Distribution by Clinical Subtype - Biopsy") {
+
+  clean_data <- df %>%
+    dplyr::filter(
+      !is.na(cluster),
+      !is.na(clinical_subtype_ihc),
+      cluster %in% cluster_levels
+    ) %>%
+    dplyr::mutate(
+      Clinical_Subtype = factor(clinical_subtype_ihc, levels = c("ER+", "TNBC")),
+      Cluster = factor(cluster, levels = cluster_levels)
+    )
+
+  tab_n <- table(clean_data$Clinical_Subtype, clean_data$Cluster)
+  if (nrow(tab_n) < 2L || ncol(tab_n) < 2L) return(NULL)
+
+  plot_data <- as.data.frame(prop.table(tab_n, margin = 1) * 100)
+  names(plot_data) <- c("Clinical_Subtype", "Cluster", "Percentage")
+
+  count_data <- as.data.frame(tab_n)
+  names(count_data) <- c("Clinical_Subtype", "Cluster", "n")
+
+  plot_data <- plot_data %>%
+    dplyr::left_join(count_data, by = c("Clinical_Subtype", "Cluster")) %>%
+    dplyr::mutate(
+      Percentage = round(Percentage, 1),
+      label = dplyr::if_else(
+        Percentage > 0,
+        paste0(n, " (", fmt_pct(Percentage), "%)"),
+        ""
+      ),
+      Clinical_Subtype = factor(Clinical_Subtype, levels = c("ER+", "TNBC")),
+      Cluster = factor(Cluster, levels = cluster_levels)
+    )
+
+  labels_df <- clean_data %>%
+    dplyr::count(Clinical_Subtype, name = "N") %>%
+    dplyr::transmute(
+      x = Clinical_Subtype,
+      y = -8,
+      label = paste0("N = ", N)
+    )
+
+  p_lab <- format_plot_p(plot_p_value("clinical_subtype_ihc"))
+
+  ggplot(
+    plot_data,
+    aes(x = Clinical_Subtype, y = Percentage, fill = Cluster)
+  ) +
+    geom_col(width = 0.85) +
+    geom_text(
+      aes(label = label),
+      position = position_stack(vjust = 0.5),
+      size = 5,
+      color = "black",
+      fontface = "bold"
+    ) +
+    geom_text(
+      data = labels_df,
+      aes(x = x, y = y, label = label),
+      inherit.aes = FALSE,
+      size = 5,
+      color = "black",
+      fontface = "bold"
+    ) +
+    annotate(
+      "text", x = 1.5, y = 110, label = p_lab,
+      size = 5, fontface = "bold"
+    ) +
+    scale_fill_manual(values = cim_plot_colors, drop = FALSE) +
+    scale_y_continuous(
+      limits = c(-15, 117),
+      breaks = seq(0, 100, 20),
+      expand = expansion(mult = c(0, 0))
+    ) +
+    scale_x_discrete(expand = expansion(mult = c(0.55, 0.55))) +
+    labs(
+      x = "Clinical Subtype", y = "Percentage (%)",
+      fill = NULL, title = title
+    ) +
+    theme_classic() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+      axis.text = element_text(color = "black", size = 18, face = "bold"),
+      axis.title = element_text(color = "black", size = 18, face = "bold"),
+      axis.title.x = element_text(margin = margin(t = 10)),
+      axis.ticks = element_line(linewidth = 1.5),
+      legend.text = element_text(color = "black", size = 18, face = "bold"),
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      legend.position = "top",
+      legend.direction = "horizontal",
+      legend.margin = margin(t = 0, b = 5),
+      legend.box.margin = margin(0)
+    ) +
+    guides(fill = guide_legend(
+      title = NULL,
+      nrow = 1,
+      keywidth = grid::unit(1, "cm"),
+      keyheight = grid::unit(0.8, "cm"),
+      override.aes = list(color = "black", linewidth = 1.2)
+    ))
+}
+
+save_manual_plot <- function(plot, filename,
+                             width = manual_plot_width,
+                             height = manual_plot_height) {
+  if (is.null(plot)) return(invisible(NULL))
+
+  ggsave(
+    file.path(output_dirs$figures, paste0(filename, ".pdf")),
+    plot = plot, width = width, height = height,
+    units = "in", device = cairo_pdf
+  )
+  ggsave(
+    file.path(output_dirs$figures, paste0(filename, ".tiff")),
+    plot = plot, width = width, height = height,
+    units = "in", dpi = manual_plot_dpi, compression = "lzw"
+  )
+  ggsave(
+    file.path(output_dirs$figures, paste0(filename, ".png")),
+    plot = plot, width = width, height = height,
+    units = "in", dpi = manual_plot_dpi, bg = "white"
+  )
+
+  invisible(plot)
+}
+```
+
+## Dedicated manual plot creation
+
+This chunk creates named plot objects without automatically saving them. Run
+the individual assignment and `print()` lines interactively when only one plot
+needs to be regenerated.
+
+```{r create-manual-plots}
+# CIM distribution within ER+ and TNBC (the supplied reversed-orientation plot).
+p_cim_by_ihc_biopsy <- create_cim_by_clinical_subtype_plot(
+  clinical_patient,
+  "CIM Cluster Distribution by Clinical Subtype - Biopsy"
+)
+
+# Clinical subtype composition within each CIM group.
+p_ihc_by_cim <- create_stack_plot_matched_style(
+  clinical_patient,
+  outcome_var = "clinical_subtype_ihc",
+  title = "Clinical Subtype (IHC) - Biopsy",
+  colors = c("ER+" = "#0072B2", "TNBC" = "#C44E52"),
+  category_levels = c("ER+", "TNBC")
+)
+
+p_pam50_biopsy <- create_stack_plot_matched_style(
+  clinical_patient,
+  outcome_var = "pam50_B",
+  title = "PAM50 Subtype - Biopsy",
+  colors = pam50_plot_colors,
+  category_levels = pam50_levels
+)
+
+p_pam50_surgery <- create_stack_plot_matched_style(
+  clinical_patient,
+  outcome_var = "pam50_S",
+  title = "PAM50 Subtype - Surgery",
+  colors = pam50_plot_colors,
+  category_levels = pam50_levels
+)
+
+p_tumor_grade <- create_stack_plot_matched_style(
+  clinical_patient,
+  outcome_var = "tumor_grade",
+  title = "Tumor Grade",
+  colors = grade_plot_colors,
+  category_levels = grade_levels
+)
+
+p_cohort <- create_stack_plot_matched_style(
+  clinical_patient,
+  outcome_var = "cohort",
+  title = "Cohort Distribution Across Clusters",
+  colors = c("NKI" = "#E69F00", "SMC" = "#56B4E9"),
+  category_levels = c("NKI", "SMC")
+)
+```
+
+## Display plots manually
+
+```{r display-manual-plots, fig.show='hold'}
+print(p_cim_by_ihc_biopsy)
+print(p_ihc_by_cim)
+print(p_pam50_biopsy)
+print(p_pam50_surgery)
+print(p_tumor_grade)
+print(p_cohort)
+```
+
+## Save all plots at high quality
+
+Comment out any line for a plot that should not be exported. Each call produces
+PDF, 600-dpi TIFF, and 600-dpi PNG versions at 5 × 5.5 inches.
+
+```{r save-manual-plots}
+save_manual_plot(p_cim_by_ihc_biopsy, "cim_by_clinical_subtype_biopsy")
+save_manual_plot(p_ihc_by_cim, "clinical_subtype_ihc_by_CIM")
+save_manual_plot(p_pam50_biopsy, "PAM50_biopsy_by_CIM")
+save_manual_plot(p_pam50_surgery, "PAM50_surgery_by_CIM")
+save_manual_plot(p_tumor_grade, "tumor_grade_by_CIM")
+save_manual_plot(p_cohort, "cohort_by_CIM")
+```
+
+# Methods summary
+
+Research-use PAM50 intrinsic subtypes were predicted for NKI biopsy and surgery
+samples from log2(TPM + 1)-transformed bulk RNA-sequencing expression using the
+robust PAM50 model implemented in the `genefu` package. HGNC gene symbols were
+mapped to Entrez Gene identifiers using `org.Hs.eg.db`. Predictions were
+generated jointly across the NKI biopsy and surgery samples while retaining a
+separate classification and centroid correlation for every sample. PAM50 calls
+were merged with clinical records using a validated canonical patient ID and
+the explicit biopsy (`B`) or surgery (`S`) timepoint.
+
+Categorical characteristics are reported as counts and percentages. Percentages
+in the Fun-CIM versus Dys-CIM analysis use the nonmissing denominator within
+each CIM group. Continuous cohort characteristics are reported as the median
+and first and third quartiles; quartiles were calculated using the Hazen/type-5
+estimator to reproduce the established summaries. Associations between CIM
+state and 2 × 2 categorical characteristics were evaluated using two-sided
+Fisher’s exact tests. Larger categorical tables were evaluated using the
+Fisher–Freeman–Halton exact test. Exact enumeration was attempted first; when
+it was computationally infeasible, the conditional p-value was estimated by
+Monte Carlo simulation using `r format(params$monte_carlo_B, scientific = FALSE)`
+replicates and seed `r params$random_seed`. Raw two-sided p-values are displayed
+in the clinical-characteristics table. Benjamini–Hochberg-adjusted p-values are
+provided in the separate statistical-audit CSV. Odds ratios with exact 95%
+confidence intervals are reported for 2 × 2 tables, and Cramér’s V is reported
+for larger tables.
+
+# Output manifest
+
+```{r output-manifest}
+output_manifest <- tibble(
+  Output = c(
+    "Augmented NKI master",
+    "Sample ID crosswalk",
+    "NKI PAM50 predictions",
+    "Patient-level combined dataset",
+    "NKI demographics",
+    "SMC demographics",
+    "Combined demographics",
+    "Fun-CIM versus Dys-CIM table",
+    "Statistical audit",
+    "Figures"
+  ),
+  Location = c(
+    nki_augmented_path,
+    file.path(output_dirs$qc, "sample_ID_crosswalk.csv"),
+    file.path(output_dirs$tables, "NKI_PAM50_predictions.csv"),
+    file.path(output_dirs$tables, "patient_level_clinical_data.csv"),
+    file.path(output_dirs$tables, "Table_1_NKI_demographics.csv"),
+    file.path(output_dirs$tables, "Table_2_SMC_demographics.csv"),
+    file.path(output_dirs$tables, "Table_3_combined_demographics.csv"),
+    file.path(output_dirs$tables, "Table_4_Fun_CIM_vs_Dys_CIM.csv"),
+    file.path(output_dirs$tables, "Table_4_statistical_tests.csv"),
+    output_dirs$figures
+  )
+)
+
+write.csv(
+  output_manifest,
+  file.path(results_dir, "output_manifest.csv"),
+  row.names = FALSE
+)
+
+kable(output_manifest)
+```
+
+# Reproducibility
+
+```{r session-info}
+writeLines(capture.output(sessionInfo()), file.path(results_dir, "sessionInfo.txt"))
+sessionInfo()
+```

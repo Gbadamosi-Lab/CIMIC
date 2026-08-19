@@ -1,0 +1,3 @@
+"analysis","Method","Cell_Type","cluster","reason","n_pairs","n_unique_delta"
+"paired","CIBERSORTx","Eosinophils","Fun-CIM","no_variation_in_delta",25,1
+"paired","CIBERSORTx","Eosinophils","Dys-CIM","no_variation_in_delta",11,1

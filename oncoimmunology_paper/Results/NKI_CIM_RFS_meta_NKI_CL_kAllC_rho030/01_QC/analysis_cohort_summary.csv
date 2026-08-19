@@ -1,0 +1,8 @@
+metric,value
+NKI patients with paired expression,20
+NKI expression samples,40
+RFS events,6
+Signature genes selected,1481
+Signature genes found in expression matrix,1481
+Signature genes missing from expression matrix,0
+Zero-variance gene changes,0

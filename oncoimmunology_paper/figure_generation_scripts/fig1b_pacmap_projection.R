@@ -16,10 +16,14 @@ library(scales)
 library(ggrepel)
 
 # Load the dataset using fread for faster reading
-nki_smc_data <- fread("Datasets/NKI_SMC/nki_smc_combine_clustered_plot_df.csv")
+# Use explicit relative path from the repository root
+nki_smc_data <- fread("oncoimmunology_paper/Datasets/NKI_SMC/nki_smc_combine_clustered_plot_df.csv")
+
+
 
 # Create output directory if it doesn't exist
-dir.create("Results", showWarnings = FALSE)
+# Use explicit relative path from the repository root
+dir.create("oncoimmunology_paper/Results", showWarnings = FALSE)
 
 # Check if the required columns exist
 required_columns <- c("sample_id", "PACMAP1", "PACMAP2", "cluster_assignments")
@@ -59,7 +63,7 @@ final_cluster_plot_pacmap <- ggplot(
   theme_classic() +
   theme(
     plot.title = element_text(hjust = 0.5),
-    legend.position = "top",
+    legend.position = "none",
     axis.text = element_text(colour = "black", size = 24),
     axis.text.x = element_text(colour = "black", size = 24),
     axis.text.y = element_text(colour = "black", size = 24),
@@ -69,4 +73,5 @@ final_cluster_plot_pacmap <- ggplot(
   )
 
 # Save the plot
-ggsave("Results/fig1b_pacmap_projection.png", plot = final_cluster_plot_pacmap, width = 12, height = 10, dpi = 300)
+ggsave("oncoimmunology_paper/Results/fig1b_pacmap_projection.png", plot = final_cluster_plot_pacmap, 
+width = 4.85*1.5, height = 4.5*1.5, dpi = 300)

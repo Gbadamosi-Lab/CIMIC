@@ -1,0 +1,23 @@
+parameter,value
+gene_set_source,cimic meta_results.csv
+signature_file,Results/cimic_meta_analysis/meta_results.csv
+meta_scope,ALL3_NKI.NEO.TNBCCL
+meta_rho_threshold,0.3
+meta_k_mode,k_all_concordant
+meta_k_mode_description,k_datasets == n_scope_datasets AND direction_concordant == YES (same direction in all)
+meta_require_fisher,TRUE
+meta_require_stouffer,TRUE
+meta_padj_threshold,0.05
+effective_meta_significance_rule,fisher_padj and stouffer_padj < 0.05
+meta_min_mean_abs_rrb,null
+meta_top_n_genes,null
+meta_rank_metric,stouffer_padj
+meta_ambiguous_gene_policy,drop
+effective_fun_cim_rule,cim == Fun | scope ALL3_NKI.NEO.TNBCCL | rho_threshold == 0.3 | k_all_concordant | fisher_padj and stouffer_padj < 0.05
+effective_dys_cim_rule,cim == Dys | scope ALL3_NKI.NEO.TNBCCL | rho_threshold == 0.3 | k_all_concordant | fisher_padj and stouffer_padj < 0.05
+expected_fun_cim_genes,null
+expected_dys_cim_genes,null
+cox_fdr_threshold,0.05
+cox_fdr_operator,<
+output_dir,D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/oncoimmunology_paper/Results/CIM_ssGSEA_survival_meta_NKI_CL_kAllC_rho030
+parameter_source,parameters defined in the .R script params list

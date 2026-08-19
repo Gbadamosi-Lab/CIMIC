@@ -1,0 +1,4 @@
+"k","silhouette_dim_reduce_space","silhouette_ge_space","silhouette_combined_avg","pac","avg_cluster_consensus","rank_silhouette_dim_reduce_space","rank_silhouette_ge_space","rank_silhouette_combined_avg","rank_pac","rank_item_cluster_consensus","overall_rank","metrics_used","metrics_used_for_tie"
+2,0.860893469275568,0.30957580136827,0.585234635321919,0,1,1,1,1,1,1,3,"pac, silhouette_combined_avg, item_cluster_consensus","item_cluster_consensus"
+3,0.696887859876637,0.202690063094704,0.44978896148567,0.064327485380117,0.968819137242755,2,2,2,2,2,6,"pac, silhouette_combined_avg, item_cluster_consensus","item_cluster_consensus"
+4,0.692751524158073,0.163902722016302,0.428327123087187,0.134502923976608,0.936216907006261,3,3,3,3,3,9,"pac, silhouette_combined_avg, item_cluster_consensus","item_cluster_consensus"

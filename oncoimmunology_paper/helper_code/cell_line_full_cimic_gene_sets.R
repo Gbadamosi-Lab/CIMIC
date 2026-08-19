@@ -81,6 +81,11 @@ cell_line_cimic_gene_sets <- setNames(
   cell_line_cimic_gene_set_names
 )
 
+# Compatibility shim: many downstream scripts (originally written for the
+# human gene‑set script) expect an object named `msig_gene_sets`. Provide it as
+# an alias to the cell‑line specific list.
+msig_gene_sets <- cell_line_cimic_gene_sets
+
 # ============================================================
 # 3. Remove immunoglobulin / T-cell-receptor variable-gene families
 #    (these are hypervariable and not informative for CIM clustering)

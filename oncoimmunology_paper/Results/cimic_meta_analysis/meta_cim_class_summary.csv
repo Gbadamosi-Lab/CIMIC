@@ -1,0 +1,13 @@
+scope,rho_threshold,cim_class,n_genes
+"ALL3_NKI.NEO.TNBCCL",0.3,"Both",481
+"ALL3_NKI.NEO.TNBCCL",0.3,"Dys_only",790
+"ALL3_NKI.NEO.TNBCCL",0.3,"Fun_only",6153
+"NEO.TNBCCL",0.3,"Both",171
+"NEO.TNBCCL",0.3,"Dys_only",224
+"NEO.TNBCCL",0.3,"Fun_only",3161
+"NKI.NEO",0.3,"Both",109
+"NKI.NEO",0.3,"Dys_only",261
+"NKI.NEO",0.3,"Fun_only",3548
+"NKI.TNBCCL",0.3,"Both",301
+"NKI.TNBCCL",0.3,"Dys_only",759
+"NKI.TNBCCL",0.3,"Fun_only",1601

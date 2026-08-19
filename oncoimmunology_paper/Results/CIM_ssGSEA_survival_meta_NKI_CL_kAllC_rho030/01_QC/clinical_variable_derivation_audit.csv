@@ -1,0 +1,23 @@
+cohort,target,source,derivation,nonmissing_n
+METABRIC,OS_MONTHS,OS_MONTHS,first available endpoint alias,412
+METABRIC,OS_EVENT,OS_EVENT,first available endpoint alias,412
+METABRIC,DSS_MONTHS,DSS_MONTHS,first available endpoint alias,412
+METABRIC,DSS_EVENT,DSS_EVENT,first available endpoint alias,412
+METABRIC,RFI_MONTHS,RFI_MONTHS,first available endpoint alias,412
+METABRIC,RFI_EVENT,RFI_EVENT,first available endpoint alias,412
+METABRIC,age_5y,AGE_AT_DIAGNOSIS,numeric age divided by 5,412
+METABRIC,tumor_size,Tumor_Size_Cat,harmonized or derived size category,406
+METABRIC,grade,NHG_Cat,grade 1/2 versus grade 3,407
+METABRIC,pam50,PAM50_metabric,harmonized PAM50,339
+METABRIC,clinical_subtype,Clinical_Subtype,harmonized receptor subtype,412
+SCANB,OS_MONTHS,OS_MONTHS,first available endpoint alias,2462
+SCANB,OS_EVENT,OS_EVENT,first available endpoint alias,2462
+SCANB,DRFI_MONTHS,DRFI_MONTHS,first available endpoint alias,1867
+SCANB,DRFI_EVENT,DRFI_EVENT,first available endpoint alias,1867
+SCANB,RFI_MONTHS,RFI_MONTHS,first available endpoint alias,1866
+SCANB,RFI_EVENT,RFI_EVENT,first available endpoint alias,1866
+SCANB,age_5y,Age (5-year range),numeric age divided by 5,2462
+SCANB,tumor_size,Tumor_Size_Cat,harmonized or derived size category,2462
+SCANB,grade,NHG_collapsed,grade 1/2 versus grade 3,2462
+SCANB,pam50,SSP.PAM50,harmonized PAM50,2462
+SCANB,clinical_subtype,Clinical_Subtype,harmonized receptor subtype,2462

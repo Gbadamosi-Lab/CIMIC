@@ -1,0 +1,8 @@
+variable,display_base,unit_or_reference
+cim_z,CIM score,per 1 SD
+median_group,CIM median group,High versus Low
+age_5y,Age,per 5 years
+tumor_size,Tumor size,reference: ≤20 mm
+grade,Histologic grade,reference: 1-2
+pam50,PAM50 subtype,reference: LumA
+clinical_subtype,Clinical subtype,reference: HR+/HER2-

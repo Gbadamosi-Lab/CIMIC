@@ -1,0 +1,12 @@
+check,passed,detail
+both_signatures,TRUE,Fun-CIM and Dys-CIM
+all_models_attempted,TRUE,M0; M2
+both_parameterizations_attempted,TRUE,continuous; median_split
+all_endpoints_attempted,TRUE,"OS, DSS, RFI, DRFi, and RFi"
+one_cutoff_per_cohort_signature,TRUE,Cutoffs fixed within cohort and signature
+median_assignments_valid,TRUE,All patient assignments satisfy the fixed median rule
+coefficient_table_written,TRUE,Required
+model_summary_written,TRUE,Required
+workbook_written,TRUE,Required
+forest_figures_written,TRUE,"Fun-CIM, Dys-CIM, and Combined M2 continuous forest PNGs and PDFs"
+km_analysis,TRUE,requested

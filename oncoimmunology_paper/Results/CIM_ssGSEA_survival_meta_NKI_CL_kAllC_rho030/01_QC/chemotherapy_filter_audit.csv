@@ -1,0 +1,3 @@
+cohort,chemo_column,input_n,retained_n,excluded_n,positive_values
+SCANB,Chemo_Combined,2462,2462,0,true; 1; yes; y; treated; chemotherapy
+METABRIC,CHEMOTHERAPY,412,412,0,true; 1; yes; y; treated; chemotherapy

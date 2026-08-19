@@ -1,0 +1,2 @@
+gene_column_index,original_header,assigned_header,detection_rule,removed_unnamed_columns,removed_column_positions
+2,gene_id,gene,recognized gene-column header,1,1

@@ -1,0 +1,9 @@
+stage,direction,n_genes
+Direction assigned from r_rb sign,Dys-CIM,3180
+Direction assigned from r_rb sign,Fun-CIM,3180
+Meta significance (fisher_padj and stouffer_padj < 0.05),Dys-CIM,516
+Meta significance (fisher_padj and stouffer_padj < 0.05),Fun-CIM,1273
+"Dataset support (k_all_concordant at rho >= 0.3, scope NKI.TNBCCL)",Dys-CIM,402
+"Dataset support (k_all_concordant at rho >= 0.3, scope NKI.TNBCCL)",Fun-CIM,1079
+Found in expression matrix,Dys-CIM,402
+Found in expression matrix,Fun-CIM,1079

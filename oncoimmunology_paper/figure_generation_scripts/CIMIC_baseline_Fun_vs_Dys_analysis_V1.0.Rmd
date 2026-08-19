@@ -1,0 +1,892 @@
+---
+title: "CIMIC Baseline Analysis: Fun-CIM versus Dys-CIM"
+author: " Gbadamosi Lab - IL/MG"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: show
+    df_print: paged
+---
+
+<!--
+PURPOSE
+This R Markdown performs an differential-expression analysis of baseline
+NKI and SMC samples classified as Fun-CIM or Dys-CIM. It fits a single
+CIM-group limma-trend model and runs direction-specific GO Biological Process
+and Hallmark overrepresentation analyses.
+
+IMPORTANT
+The input expression matrix is assumed to contain log2(TPM + 1), or another
+already log-transformed TPM measure. Do not use this workflow on raw counts.
+For raw counts, use a count-aware workflow such as limma-voom, edgeR, or DESeq2.
+-->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  dpi = 150
+)
+options(stringsAsFactors = FALSE, scipen = 999)
+```
+
+# Analysis overview
+
+This analysis uses baseline (`_B`) samples only and compares **Fun-CIM minus
+Dys-CIM**. Therefore, a positive `logFC` indicates higher expression in
+Fun-CIM, whereas a negative `logFC` indicates higher expression in Dys-CIM.
+
+One model is fitted:
+
+1. **CIM-group model:** `expression ~ CIM_group`
+
+This model estimates the overall observed Fun-CIM versus Dys-CIM expression
+difference across the combined baseline dataset. ORA is performed independently for
+Fun-CIM-higher and Dys-CIM-higher genes. The universe is the set of genes that
+passed expression filtering, was tested by limma, and was successfully mapped
+to the identifier used for enrichment.
+
+# 1. Configuration
+
+Edit this section when paths, thresholds, colors, or plotting preferences
+change. No other section should normally require manual editing.
+
+```{r configuration}
+# ---- Input files ------------------------------------------------------------
+DATA_DIR <- paste0(
+  "C:/Users/lopesdelima.i/OneDrive - University of Florida/",
+  "Gbadamosi Lab/Iasmim Lopes/01.CIMIC/",
+  "DEGs_baseline/data"
+)
+
+CLUSTER_FILE <- file.path(DATA_DIR, "nki_smc_clusters.csv")
+EXPRESSION_FILE <- file.path(DATA_DIR, "nki_smc_combine_TPM_lognorm.csv")
+
+# Results are written beside the data directory.
+OUTPUT_DIR <- file.path(dirname(DATA_DIR), "results")
+
+# ---- Biological definitions ------------------------------------------------
+CLUSTER_MAPPING <- c("1" = "Dys-CIM", "2" = "Fun-CIM")
+CIM_LEVELS <- c("Dys-CIM", "Fun-CIM")  # Reference level is Dys-CIM.
+COHORT_LEVELS <- c("nki", "smc")
+
+# Fixed manuscript palette. Replace these hexadecimal values if needed.
+CIM_COLORS <- c(
+  "Fun-CIM" = "#2A9D8F",
+  "Dys-CIM" = "#D95F59",
+  "Not significant" = "#B8B8B8"
+)
+COHORT_COLORS <- c("nki" = "#3B6FB6", "smc" = "#E69F00")
+
+# ---- Filtering and significance thresholds --------------------------------
+# The matrix is assumed to be ALREADY log-transformed TPM.
+MIN_LOG_EXPRESSION <- 1
+MIN_SAMPLE_FRACTION <- 0.20
+MIN_VARIANCE <- 1e-8
+
+FDR_CUTOFF <- 0.05
+LOG2FC_CUTOFF <- log2(1.25)  # A 25% linear fold difference (~0.322 log2FC).
+
+# ---- Figure settings --------------------------------------------------------
+N_VOLCANO_LABELS_PER_DIRECTION <- 10
+N_HEATMAP_GENES <- 40
+N_ORA_TERMS <- 15
+ORA_DESCRIPTION_WRAP <- 35
+ORA_FIGURE_WIDTH <- 4.5
+ORA_FIGURE_HEIGHT <- 3.2
+FIGURE_DPI <- 600
+RANDOM_SEED <- 1234
+
+set.seed(RANDOM_SEED)
+```
+
+# 2. Packages and output folders
+
+The report checks packages but does not install them silently. Install any
+reported missing packages before rendering.
+
+```{r packages-and-folders}
+required_packages <- c(
+  "tidyverse", "limma", "ggrepel", "pheatmap",
+  "clusterProfiler", "org.Hs.eg.db", "msigdbr", "AnnotationDbi"
+)
+
+missing_packages <- required_packages[
+  !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
+]
+
+if (length(missing_packages) > 0) {
+  stop(
+    "Install the following packages before rendering: ",
+    paste(missing_packages, collapse = ", ")
+  )
+}
+
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(limma)
+  library(ggrepel)
+  library(pheatmap)
+  library(clusterProfiler)
+  library(org.Hs.eg.db)
+  library(msigdbr)
+  library(AnnotationDbi)
+})
+
+dir_map <- list(
+  qc_tables       = file.path(OUTPUT_DIR, "00_qc", "tables"),
+  qc_figures      = file.path(OUTPUT_DIR, "00_qc", "figures"),
+  model_tables = file.path(OUTPUT_DIR, "01_CIM_group_model", "DEG_tables"),
+  model_figs   = file.path(OUTPUT_DIR, "01_CIM_group_model", "DEG_figures"),
+  model_ora    = file.path(OUTPUT_DIR, "01_CIM_group_model", "ORA"),
+  logs = file.path(OUTPUT_DIR, "logs")
+)
+invisible(lapply(dir_map, dir.create, recursive = TRUE, showWarnings = FALSE))
+
+save_plot <- function(plot, filename, folder, width, height) {
+  ggplot2::ggsave(
+    file.path(folder, paste0(filename, ".png")), plot,
+    width = width, height = height, units = "in", dpi = FIGURE_DPI,
+    bg = "white"
+  )
+  ggplot2::ggsave(
+    file.path(folder, paste0(filename, ".pdf")), plot,
+    width = width, height = height, units = "in", device = cairo_pdf,
+    bg = "white"
+  )
+}
+```
+
+# 3. Import and validate inputs
+
+```{r import-inputs}
+if (!file.exists(CLUSTER_FILE)) stop("Cluster file not found: ", CLUSTER_FILE)
+if (!file.exists(EXPRESSION_FILE)) stop("Expression file not found: ", EXPRESSION_FILE)
+
+cluster_metadata <- readr::read_csv(CLUSTER_FILE, show_col_types = FALSE) |>
+  mutate(
+    sample_id = as.character(sample_id),
+    cluster_assignments = as.character(cluster_assignments),
+    cohort = str_to_lower(as.character(cohort))
+  )
+
+expression_raw <- readr::read_csv(EXPRESSION_FILE, show_col_types = FALSE)
+
+required_metadata_columns <- c("sample_id", "cluster_assignments", "cohort")
+missing_metadata_columns <- setdiff(required_metadata_columns, names(cluster_metadata))
+if (length(missing_metadata_columns) > 0) {
+  stop("Missing annotation columns: ", paste(missing_metadata_columns, collapse = ", "))
+}
+if (anyDuplicated(cluster_metadata$sample_id)) {
+  stop("Duplicated sample_id values were found in the cluster file.")
+}
+if (!all(cluster_metadata$cluster_assignments %in% names(CLUSTER_MAPPING))) {
+  stop("Unexpected cluster assignment(s): ", paste(
+    setdiff(unique(cluster_metadata$cluster_assignments), names(CLUSTER_MAPPING)),
+    collapse = ", "
+  ))
+}
+if (!all(cluster_metadata$cohort %in% COHORT_LEVELS)) {
+  stop("Unexpected cohort value(s): ", paste(
+    setdiff(unique(cluster_metadata$cohort), COHORT_LEVELS), collapse = ", "
+  ))
+}
+
+# Sample columns are defined by terminal _B or _S suffixes. All other columns
+# are candidates for the gene identifier column.
+sample_columns <- names(expression_raw)[str_detect(names(expression_raw), "_(B|S)$")]
+non_sample_columns <- setdiff(names(expression_raw), sample_columns)
+
+if (length(sample_columns) == 0) stop("No sample columns ending in _B or _S were found.")
+if (length(non_sample_columns) != 1) {
+  stop(
+    "Expected exactly one non-sample gene identifier column, but found: ",
+    paste(non_sample_columns, collapse = ", ")
+  )
+}
+GENE_COLUMN <- non_sample_columns[[1]]
+
+# Force sample data to numeric and detect failed conversions.
+expression_numeric <- expression_raw |>
+  mutate(across(all_of(sample_columns), ~ suppressWarnings(as.numeric(.x))))
+
+if (anyNA(expression_numeric[, sample_columns])) {
+  stop("Missing or nonnumeric expression values were found in sample columns.")
+}
+if (any(!is.finite(as.matrix(expression_numeric[, sample_columns])))) {
+  stop("Infinite expression values were found.")
+}
+if (any(is.na(expression_numeric[[GENE_COLUMN]]) |
+        expression_numeric[[GENE_COLUMN]] == "")) {
+  stop("Missing gene identifiers were found in column: ", GENE_COLUMN)
+}
+
+input_summary <- tibble(
+  metric = c(
+    "Expression rows", "All expression sample columns", "Baseline columns",
+    "Surgery columns", "Annotation rows", "Expression minimum",
+    "Expression median", "Expression maximum"
+  ),
+  value = c(
+    nrow(expression_numeric), length(sample_columns),
+    sum(str_detect(sample_columns, "_B$")),
+    sum(str_detect(sample_columns, "_S$")), nrow(cluster_metadata),
+    min(as.matrix(expression_numeric[, sample_columns])),
+    median(as.matrix(expression_numeric[, sample_columns])),
+    max(as.matrix(expression_numeric[, sample_columns]))
+  )
+)
+readr::write_csv(input_summary, file.path(dir_map$qc_tables, "input_summary.csv"))
+knitr::kable(input_summary)
+```
+
+The range above must be reviewed. Values that are very large (for example,
+hundreds or thousands) may indicate untransformed TPM, in which case this
+analysis should be stopped and the transformation status confirmed.
+
+# 4. Normalize sample names and select baseline samples
+
+Only a terminal `_B` or `_S` is removed. Internal underscores in SMC IDs such
+as `OB_0139` are preserved.
+
+```{r sample-matching}
+expression_sample_metadata <- tibble(
+  expression_sample = sample_columns,
+  timepoint = case_when(
+    str_detect(expression_sample, "_B$") ~ "Baseline",
+    str_detect(expression_sample, "_S$") ~ "Surgery",
+    TRUE ~ NA_character_
+  ),
+  sample_id = str_remove(expression_sample, "_(B|S)$")
+)
+
+matching_report <- expression_sample_metadata |>
+  left_join(cluster_metadata, by = "sample_id") |>
+  mutate(
+    CIM_group = unname(CLUSTER_MAPPING[cluster_assignments]),
+    match_status = if_else(
+      is.na(cluster_assignments) | is.na(cohort), "Unmatched", "Matched"
+    )
+  )
+
+baseline_metadata <- matching_report |>
+  filter(timepoint == "Baseline")
+
+unmatched_expression <- matching_report |>
+  filter(match_status == "Unmatched")
+unmatched_annotation <- cluster_metadata |>
+  anti_join(expression_sample_metadata, by = "sample_id")
+
+readr::write_csv(matching_report, file.path(dir_map$qc_tables, "sample_matching.csv"))
+readr::write_csv(
+  unmatched_expression,
+  file.path(dir_map$qc_tables, "unmatched_expression_samples.csv")
+)
+readr::write_csv(
+  unmatched_annotation,
+  file.path(dir_map$qc_tables, "unmatched_annotation_samples.csv")
+)
+
+if (nrow(unmatched_expression) > 0) {
+  stop("Unmatched expression samples were found. Review the exported matching report.")
+}
+if (nrow(unmatched_annotation) > 0) {
+  stop("Annotation samples absent from the expression matrix were found.")
+}
+if (anyDuplicated(baseline_metadata$expression_sample)) {
+  stop("Duplicated baseline expression sample names were found.")
+}
+
+baseline_metadata <- baseline_metadata |>
+  mutate(
+    CIM_group = factor(CIM_group, levels = CIM_LEVELS),
+    cohort = factor(cohort, levels = COHORT_LEVELS)
+  )
+
+if (anyNA(baseline_metadata$CIM_group) || anyNA(baseline_metadata$cohort)) {
+  stop("Missing CIM or cohort assignments remain after matching.")
+}
+
+knitr::kable(
+  baseline_metadata |>
+    count(cohort, CIM_group, name = "n") |>
+    tidyr::pivot_wider(names_from = CIM_group, values_from = n, values_fill = 0)
+)
+```
+
+# 5. Build and filter the expression matrix
+
+Duplicated gene identifiers are collapsed by their mean expression before
+filtering. A gene is retained when its expression is at least
+`r MIN_LOG_EXPRESSION` in at least `r scales::percent(MIN_SAMPLE_FRACTION)` of
+baseline samples and its variance exceeds `r MIN_VARIANCE`.
+
+```{r expression-matrix-and-filtering}
+baseline_long <- expression_numeric |>
+  dplyr::select(all_of(c(GENE_COLUMN, baseline_metadata$expression_sample))) |>
+  dplyr::rename(gene_id = all_of(GENE_COLUMN)) |>
+  mutate(gene_id = as.character(gene_id)) |>
+  group_by(gene_id) |>
+  summarise(across(everything(), mean), .groups = "drop")
+
+baseline_matrix <- baseline_long |>
+  column_to_rownames("gene_id") |>
+  as.matrix()
+
+# Reorder explicitly: design rows and expression columns must be identical.
+baseline_matrix <- baseline_matrix[, baseline_metadata$expression_sample, drop = FALSE]
+stopifnot(identical(colnames(baseline_matrix), baseline_metadata$expression_sample))
+
+minimum_samples <- ceiling(ncol(baseline_matrix) * MIN_SAMPLE_FRACTION)
+keep_expression <- rowSums(baseline_matrix >= MIN_LOG_EXPRESSION) >= minimum_samples
+gene_variance <- apply(baseline_matrix, 1, var)
+keep_variance <- is.finite(gene_variance) & gene_variance > MIN_VARIANCE
+keep_gene <- keep_expression & keep_variance
+filtered_matrix <- baseline_matrix[keep_gene, , drop = FALSE]
+
+filtering_summary <- tibble(
+  metric = c(
+    "Unique genes before filtering", "Removed for low expression",
+    "Removed for insufficient variance among expression-passing genes",
+    "Genes retained and tested"
+  ),
+  n = c(
+    nrow(baseline_matrix), sum(!keep_expression),
+    sum(keep_expression & !keep_variance), nrow(filtered_matrix)
+  )
+)
+readr::write_csv(filtering_summary, file.path(dir_map$qc_tables, "filtering_summary.csv"))
+knitr::kable(filtering_summary)
+```
+
+# 6. Sample composition and exploratory quality control
+
+```{r sample-composition, fig.width=6, fig.height=4}
+composition_data <- baseline_metadata |>
+  count(cohort, CIM_group, name = "n")
+
+p_composition <- ggplot(composition_data, aes(cohort, n, fill = CIM_group)) +
+  geom_col(position = "dodge", width = 0.7) +
+  geom_text(
+    aes(label = n), position = position_dodge(width = 0.7), vjust = -0.3,
+    size = 3.5
+  ) +
+  scale_fill_manual(values = CIM_COLORS[c("Dys-CIM", "Fun-CIM")]) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.12))) +
+  labs(x = "Cohort", y = "Number of baseline samples", fill = NULL) +
+  theme_classic(base_size = 11) +
+  theme(legend.position = "top")
+
+save_plot(p_composition, "sample_distribution", dir_map$qc_figures, 5, 3.6)
+p_composition
+```
+
+```{r expression-distributions, fig.width=8, fig.height=4}
+distribution_data <- as_tibble(filtered_matrix, rownames = "gene_id") |>
+  pivot_longer(-gene_id, names_to = "expression_sample", values_to = "expression") |>
+  left_join(
+    baseline_metadata |> dplyr::select(expression_sample, CIM_group, cohort),
+    by = "expression_sample"
+  )
+
+p_distribution <- ggplot(
+  distribution_data,
+  aes(expression_sample, expression, fill = CIM_group)
+) +
+  geom_boxplot(outlier.size = 0.2, linewidth = 0.25) +
+  facet_grid(~ cohort, scales = "free_x", space = "free_x") +
+  scale_fill_manual(values = CIM_COLORS[c("Dys-CIM", "Fun-CIM")]) +
+  labs(x = NULL, y = "Log-normalized TPM", fill = NULL) +
+  theme_classic(base_size = 9) +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 6),
+    legend.position = "top"
+  )
+
+save_plot(p_distribution, "expression_distributions", dir_map$qc_figures, 9, 4.5)
+p_distribution
+```
+
+# 7. Fit the limma-trend CIM-group model
+
+`eBayes(trend = TRUE, robust = TRUE)` is used because the input consists of
+continuous log-normalized TPM values and may retain an expression-dependent
+mean-variance relationship. This is **limma-trend**, not limma-voom.
+
+```{r model-functions}
+fit_cim_group_model <- function(expression_matrix, metadata) {
+  design <- model.matrix(~ CIM_group, data = metadata)
+
+  coefficient_name <- "CIM_groupFun-CIM"
+  if (!coefficient_name %in% colnames(design)) {
+    stop("Expected coefficient was not created: ", coefficient_name)
+  }
+  if (qr(design)$rank < ncol(design)) stop("The model design matrix is not full rank.")
+
+  fit <- limma::lmFit(expression_matrix, design)
+  fit <- limma::eBayes(fit, trend = TRUE, robust = TRUE)
+
+  results <- limma::topTable(
+    fit, coef = coefficient_name, number = Inf, sort.by = "none",
+    adjust.method = "BH"
+  ) |>
+    rownames_to_column("gene_id") |>
+    as_tibble() |>
+    mutate(
+      linear_fold_change = 2^logFC,
+      percent_difference = 100 * (linear_fold_change - 1),
+      direction = case_when(
+        logFC > 0 ~ "Fun-CIM higher",
+        logFC < 0 ~ "Dys-CIM higher",
+        TRUE ~ "No change"
+      ),
+      significance = case_when(
+        adj.P.Val <= FDR_CUTOFF & logFC >= LOG2FC_CUTOFF ~ "Fun-CIM higher",
+        adj.P.Val <= FDR_CUTOFF & logFC <= -LOG2FC_CUTOFF ~ "Dys-CIM higher",
+        TRUE ~ "Not significant"
+      )
+    )
+
+  list(fit = fit, design = design, results = results)
+}
+
+export_deg_results <- function(results, output_folder) {
+  readr::write_csv(results, file.path(output_folder, "all_tested_genes.csv"))
+  readr::write_csv(
+    filter(results, significance != "Not significant"),
+    file.path(output_folder, "significant_DEGs.csv")
+  )
+  readr::write_csv(
+    filter(results, significance == "Fun-CIM higher"),
+    file.path(output_folder, "Fun-CIM_higher_DEGs.csv")
+  )
+  readr::write_csv(
+    filter(results, significance == "Dys-CIM higher"),
+    file.path(output_folder, "Dys-CIM_higher_DEGs.csv")
+  )
+}
+```
+
+```{r fit-models}
+cim_group_model <- fit_cim_group_model(filtered_matrix, baseline_metadata)
+
+export_deg_results(cim_group_model$results, dir_map$model_tables)
+
+deg_counts <- cim_group_model$results |>
+  count(significance) |>
+  mutate(model = "CIM-group model") |>
+  dplyr::select(model, significance, n)
+
+readr::write_csv(deg_counts, file.path(dir_map$model_tables, "DEG_counts.csv"))
+knitr::kable(deg_counts)
+```
+
+# 8. Volcano plots
+
+The horizontal dotted line represents raw `P = 0.05` for visual reference only.
+DEG classification is based on BH-adjusted `P <= r FDR_CUTOFF` and
+`|log2FC| >= r round(LOG2FC_CUTOFF, 3)`.
+
+```{r volcano-functions}
+make_volcano <- function(results, title) {
+  label_data <- results |>
+    filter(significance != "Not significant") |>
+    group_by(significance) |>
+    slice_min(order_by = adj.P.Val, n = N_VOLCANO_LABELS_PER_DIRECTION,
+              with_ties = FALSE) |>
+    ungroup()
+
+  ggplot(results, aes(logFC, -log10(pmax(P.Value, .Machine$double.xmin)))) +
+    geom_point(aes(color = significance), size = 1.25, alpha = 0.75) +
+    geom_vline(
+      xintercept = c(-LOG2FC_CUTOFF, LOG2FC_CUTOFF),
+      linetype = "dashed", color = "grey45", linewidth = 0.4
+    ) +
+    geom_hline(
+      yintercept = -log10(0.05), linetype = "dotted",
+      color = "grey45", linewidth = 0.4
+    ) +
+    ggrepel::geom_text_repel(
+      data = label_data, aes(label = gene_id), size = 2.7,
+      max.overlaps = Inf, box.padding = 0.35, min.segment.length = 0
+    ) +
+    scale_color_manual(
+      values = c(
+        "Fun-CIM higher" = CIM_COLORS[["Fun-CIM"]],
+        "Dys-CIM higher" = CIM_COLORS[["Dys-CIM"]],
+        "Not significant" = CIM_COLORS[["Not significant"]]
+      )
+    ) +
+    labs(
+      title = title, x = expression(log[2]*"FC (Fun-CIM - Dys-CIM)"),
+      y = expression(-log[10]*"(raw p-value)"), color = NULL
+    ) +
+    theme_classic(base_size = 11) +
+    theme(legend.position = "top", plot.title = element_text(face = "bold"))
+}
+
+volcano_cim_group <- make_volcano(cim_group_model$results, "CIM-group model")
+save_plot(volcano_cim_group, "volcano_CIM_group_model", dir_map$model_figs, 5, 4.3)
+volcano_cim_group
+```
+
+# 9. Heatmap of top CIM-group model DEGs
+
+The heatmap uses the row-scaled expression matrix. Column
+annotations show both CIM group and cohort. If the model has no
+genes passing the DEG thresholds, its most statistically ranked tested genes
+are shown instead; this fallback should be stated when interpreting the figure.
+
+```{r heatmaps, fig.width=9, fig.height=8}
+column_annotation <- baseline_metadata |>
+  dplyr::select(expression_sample, CIM_group, cohort) |>
+  column_to_rownames("expression_sample")
+
+annotation_colors <- list(
+  CIM_group = CIM_COLORS[c("Dys-CIM", "Fun-CIM")],
+  cohort = COHORT_COLORS
+)
+
+make_deg_heatmap <- function(results, model_label, output_folder, filename) {
+  significant_results <- results |>
+    filter(significance != "Not significant") |>
+    arrange(adj.P.Val, desc(abs(logFC)))
+
+  used_fallback <- nrow(significant_results) == 0
+  heatmap_source <- if (!used_fallback) {
+    significant_results
+  } else {
+    results |> arrange(adj.P.Val, desc(abs(logFC)))
+  }
+
+  heatmap_genes <- head(heatmap_source$gene_id, N_HEATMAP_GENES)
+  heatmap_matrix <- filtered_matrix[heatmap_genes, , drop = FALSE]
+  heatmap_matrix <- t(scale(t(heatmap_matrix)))
+  heatmap_matrix[!is.finite(heatmap_matrix)] <- 0
+
+  draw_heatmap <- function() {
+    pheatmap::pheatmap(
+      heatmap_matrix,
+      annotation_col = column_annotation,
+      annotation_colors = annotation_colors,
+      color = colorRampPalette(c("#2166AC", "white", "#B2182B"))(100),
+      show_colnames = FALSE,
+      fontsize_row = 7,
+      border_color = NA,
+      main = paste0("Top ", model_label, " differential-expression genes")
+    )
+  }
+
+  png(
+    file.path(output_folder, paste0(filename, ".png")),
+    width = 8, height = 8, units = "in", res = FIGURE_DPI
+  )
+  draw_heatmap()
+  dev.off()
+
+  pdf(
+    file.path(output_folder, paste0(filename, ".pdf")),
+    width = 8, height = 8
+  )
+  draw_heatmap()
+  dev.off()
+
+  tibble(
+    model = model_label,
+    significant_DEGs_available = nrow(significant_results),
+    genes_displayed = length(heatmap_genes),
+    ranked_gene_fallback_used = used_fallback
+  )
+}
+
+heatmap_summary <- make_deg_heatmap(
+  cim_group_model$results,
+  "CIM-group model",
+  dir_map$model_figs,
+  "top_DEG_heatmap"
+)
+
+readr::write_csv(
+  heatmap_summary,
+  file.path(dir_map$model_tables, "heatmap_gene_selection_summary.csv")
+)
+knitr::kable(heatmap_summary)
+```
+
+# 10. Direction-specific overrepresentation analysis
+
+## 11.1 Identifier mapping
+
+This section assumes gene identifiers are either official human gene symbols or
+Ensembl gene IDs. Version suffixes such as `.12` are removed from Ensembl IDs.
+The detected identifier type and mapping statistics are exported. If the input
+uses another identifier system, edit `detect_gene_id_type()` and `map_to_entrez()`.
+
+```{r ora-functions}
+detect_gene_id_type <- function(ids) {
+  proportion_ensembl <- mean(str_detect(ids, "^ENSG[0-9]+(\\.[0-9]+)?$"))
+  if (proportion_ensembl >= 0.5) "ENSEMBL" else "SYMBOL"
+}
+
+map_to_entrez <- function(ids, input_type) {
+  clean_ids <- if (input_type == "ENSEMBL") str_remove(ids, "\\.[0-9]+$") else ids
+  mapping <- AnnotationDbi::select(
+    org.Hs.eg.db,
+    keys = unique(clean_ids),
+    keytype = input_type,
+    columns = "ENTREZID"
+  ) |>
+    as_tibble() |>
+    dplyr::rename(input_id_clean = all_of(input_type)) |>
+    filter(!is.na(ENTREZID)) |>
+    distinct(input_id_clean, ENTREZID)
+
+  tibble(gene_id = ids, input_id_clean = clean_ids) |>
+    left_join(mapping, by = "input_id_clean")
+}
+
+run_directional_ora <- function(results, model_name, output_folder) {
+  id_type <- detect_gene_id_type(results$gene_id)
+  mapped_all <- map_to_entrez(results$gene_id, id_type)
+  universe_entrez <- unique(na.omit(mapped_all$ENTREZID))
+
+  mapping_summary <- tibble(
+    model = model_name,
+    detected_input_type = id_type,
+    tested_gene_ids = n_distinct(results$gene_id),
+    tested_ids_mapped = n_distinct(mapped_all$gene_id[!is.na(mapped_all$ENTREZID)]),
+    unique_universe_entrez_ids = length(universe_entrez),
+    mapping_rate = tested_ids_mapped / tested_gene_ids
+  )
+  readr::write_csv(mapping_summary, file.path(output_folder, "ORA_mapping_summary.csv"))
+  readr::write_csv(mapped_all, file.path(output_folder, "tested_gene_ID_mapping.csv"))
+
+  ora_results <- list()
+  for (direction_name in c("Fun-CIM higher", "Dys-CIM higher")) {
+    direction_slug <- ifelse(direction_name == "Fun-CIM higher",
+                             "Fun-CIM_higher", "Dys-CIM_higher")
+    deg_ids <- results |>
+      filter(significance == direction_name) |>
+      pull(gene_id)
+    deg_entrez <- mapped_all |>
+      filter(gene_id %in% deg_ids, !is.na(ENTREZID)) |>
+      pull(ENTREZID) |>
+      unique()
+
+    input_summary <- tibble(
+      model = model_name, direction = direction_name,
+      DEG_gene_ids = length(unique(deg_ids)),
+      mapped_DEG_gene_ids = n_distinct(mapped_all$gene_id[
+        mapped_all$gene_id %in% deg_ids & !is.na(mapped_all$ENTREZID)
+      ]),
+      unique_DEG_entrez_ids = length(deg_entrez),
+      unique_universe_entrez_ids = length(universe_entrez)
+    )
+    readr::write_csv(
+      input_summary,
+      file.path(output_folder, paste0(direction_slug, "_ORA_input_summary.csv"))
+    )
+
+    if (length(deg_entrez) == 0) {
+      warning("No mapped DEGs available for ", model_name, ": ", direction_name)
+      next
+    }
+
+    go_fit <- clusterProfiler::enrichGO(
+      gene = deg_entrez, universe = universe_entrez,
+      OrgDb = org.Hs.eg.db, keyType = "ENTREZID", ont = "BP",
+      pAdjustMethod = "BH", pvalueCutoff = 1, qvalueCutoff = 1,
+      readable = TRUE
+    )
+    # Preserve the complete unsimplified output. GO semantic simplification can
+    # be extremely slow when it is applied to every returned term, especially
+    # because enrichGO() above intentionally uses permissive cutoffs. Restrict
+    # simplification to statistically significant terms only.
+    go_table <- as_tibble(as.data.frame(go_fit))
+    go_fit_significant <- go_fit
+    go_fit_significant@result <- go_fit_significant@result |>
+      dplyr::filter(is.finite(p.adjust), p.adjust <= FDR_CUTOFF)
+
+    if (nrow(go_fit_significant@result) > 1) {
+      message("Simplifying significant GO BP terms for ", model_name,
+              " / ", direction_name, " (n = ",
+              nrow(go_fit_significant@result), ")")
+      go_fit_simplified <- clusterProfiler::simplify(
+        go_fit_significant, cutoff = 0.7, by = "p.adjust",
+        select_fun = min, measure = "Wang"
+      )
+      go_simplified_table <- as_tibble(as.data.frame(go_fit_simplified))
+    } else {
+      go_simplified_table <- as_tibble(go_fit_significant@result)
+    }
+
+    hallmark_fit <- clusterProfiler::enricher(
+      gene = as.character(deg_entrez), universe = as.character(universe_entrez),
+      TERM2GENE = hallmark_sets, pAdjustMethod = "BH",
+      pvalueCutoff = 1, qvalueCutoff = 1
+    )
+    hallmark_table <- as_tibble(as.data.frame(hallmark_fit))
+
+    readr::write_csv(go_table, file.path(output_folder,
+      paste0(direction_slug, "_GO_BP_all_results.csv")))
+    readr::write_csv(go_simplified_table, file.path(output_folder,
+      paste0(direction_slug, "_GO_BP_significant_simplified_results.csv")))
+    readr::write_csv(hallmark_table, file.path(output_folder,
+      paste0(direction_slug, "_Hallmark_all_results.csv")))
+
+    ora_results[[direction_slug]] <- list(
+      GO_BP = go_simplified_table,
+      GO_BP_all = go_table,
+      Hallmark = hallmark_table
+    )
+  }
+  ora_results
+}
+
+prepare_ora_plot_data <- function(ora_table) {
+  if (is.null(ora_table) || nrow(ora_table) == 0) return(tibble())
+  ora_table |>
+    filter(is.finite(p.adjust), p.adjust <= FDR_CUTOFF) |>
+    arrange(p.adjust) |>
+    slice_head(n = N_ORA_TERMS) |>
+    mutate(
+      Description = str_replace_all(Description, "_", " "),
+      Description = str_wrap(Description, width = ORA_DESCRIPTION_WRAP),
+      # First/top term is placed at the top after coord_flip().
+      Description = factor(Description, levels = rev(unique(Description)))
+    )
+}
+
+plot_ora_direction <- function(ora_results, direction_slug, collection, title) {
+  direction_results <- ora_results[[direction_slug]]
+  if (is.null(direction_results)) return(NULL)
+  plot_data <- prepare_ora_plot_data(direction_results[[collection]])
+  if (nrow(plot_data) == 0) return(NULL)
+
+  ggplot(plot_data, aes(x = Description, y = Count)) +
+    geom_col(aes(fill = p.adjust), color = "black", linewidth = 0.3) +
+    coord_flip() +
+    labs(
+      title = title, x = NULL, y = "Gene Count", fill = "Adj p"
+    ) +
+    scale_fill_gradient(
+      low = "red", high = "blue", trans = "reverse",
+      labels = scales::scientific
+    ) +
+    theme_minimal(base_size = 8) +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
+      axis.text.y = element_text(size = 7, colour = "black", face = "bold"),
+      axis.text.x = element_text(size = 7, colour = "black", face = "bold"),
+      axis.title.x = element_text(size = 8, face = "bold"),
+      legend.text = element_text(size = 6),
+      legend.title = element_text(size = 7, face = "bold"),
+      legend.key.size = grid::unit(0.3, "cm"),
+      plot.title = element_text(size = 9, face = "bold", hjust = 0.5),
+      plot.margin = margin(2, 2, 2, 2, "mm")
+    )
+}
+```
+
+```{r run-ora, fig.width=4.5, fig.height=3.2}
+# Build Hallmark TERM2GENE once and reuse it for both DEG directions.
+hallmark_sets <- msigdbr::msigdbr(species = "Homo sapiens", category = "H") |>
+  dplyr::select(gs_name, entrez_gene) |>
+  filter(!is.na(entrez_gene)) |>
+  transmute(term = gs_name, gene = as.character(entrez_gene)) |>
+  distinct()
+
+cim_group_ora_results <- run_directional_ora(
+  cim_group_model$results, "CIM-group model", dir_map$model_ora
+)
+
+ora_plot_jobs <- tidyr::crossing(
+  direction_slug = c("Fun-CIM_higher", "Dys-CIM_higher"),
+  collection = c("GO_BP", "Hallmark")
+) |>
+  mutate(
+    results = map(direction_slug, ~ cim_group_ora_results),
+    folder = dir_map$model_ora,
+    group_label = if_else(direction_slug == "Fun-CIM_higher", "Fun-CIM", "Dys-CIM"),
+    collection_label = if_else(collection == "GO_BP", "GO BP", "Hallmark"),
+    title = paste0(group_label, ": Top 15 ", collection_label, " Terms"),
+    filename = paste(direction_slug, collection, "CIM_group_model", "top15", sep = "_")
+  )
+
+for (i in seq_len(nrow(ora_plot_jobs))) {
+  job <- ora_plot_jobs[i, ]
+  p <- plot_ora_direction(
+    job$results[[1]], job$direction_slug, job$collection, job$title
+  )
+  if (!is.null(p)) {
+    save_plot(
+      p, job$filename, job$folder,
+      ORA_FIGURE_WIDTH, ORA_FIGURE_HEIGHT
+    )
+  }
+}
+
+p_go_fun <- plot_ora_direction(
+  cim_group_ora_results, "Fun-CIM_higher", "GO_BP",
+  "Fun-CIM: Top 15 GO BP Terms"
+)
+if (!is.null(p_go_fun)) p_go_fun
+```
+
+# 11. Analysis summary
+
+```{r final-summary}
+analysis_summary <- tibble(
+  item = c(
+    "Baseline samples", "Dys-CIM samples", "Fun-CIM samples",
+    "NKI samples", "SMC samples", "Genes tested",
+    "CIM-group model Fun-CIM-higher DEGs",
+    "CIM-group model Dys-CIM-higher DEGs"
+  ),
+  value = c(
+    nrow(baseline_metadata), sum(baseline_metadata$CIM_group == "Dys-CIM"),
+    sum(baseline_metadata$CIM_group == "Fun-CIM"),
+    sum(baseline_metadata$cohort == "nki"), sum(baseline_metadata$cohort == "smc"),
+    nrow(filtered_matrix),
+    sum(cim_group_model$results$significance == "Fun-CIM higher"),
+    sum(cim_group_model$results$significance == "Dys-CIM higher")
+  )
+)
+
+readr::write_csv(analysis_summary, file.path(dir_map$logs, "analysis_summary.csv"))
+knitr::kable(analysis_summary)
+```
+
+Interpret the CIM-group model as the overall observed baseline difference
+between Fun-CIM and Dys-CIM. Because cohort is not included as a covariate,
+inspect cohort balance when evaluating whether cohort structure could contribute
+to the observed expression differences.
+
+# 12. Reproducibility records
+
+```{r save-parameters-and-session-info}
+parameter_lines <- c(
+  paste("Expression file:", EXPRESSION_FILE),
+  paste("Cluster file:", CLUSTER_FILE),
+  paste("Output directory:", OUTPUT_DIR),
+  paste("Gene identifier column:", GENE_COLUMN),
+  paste("Minimum log expression:", MIN_LOG_EXPRESSION),
+  paste("Minimum sample fraction:", MIN_SAMPLE_FRACTION),
+  paste("Minimum variance:", MIN_VARIANCE),
+  paste("FDR cutoff:", FDR_CUTOFF),
+  paste("Absolute log2FC cutoff:", LOG2FC_CUTOFF),
+  paste("Random seed:", RANDOM_SEED),
+  paste("Analysis date:", Sys.Date())
+)
+writeLines(parameter_lines, file.path(dir_map$logs, "analysis_parameters.txt"))
+writeLines(capture.output(sessionInfo()), file.path(dir_map$logs, "session_info.txt"))
+
+sessionInfo()
+```
