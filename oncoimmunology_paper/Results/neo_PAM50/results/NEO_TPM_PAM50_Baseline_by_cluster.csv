@@ -1,0 +1,10 @@
+"Condition","cluster_assignments","PAM50_Subtype","n","prop"
+"Baseline",1,"Basal",2,0.222
+"Baseline",1,"Her2",1,0.111
+"Baseline",1,"LumB",1,0.111
+"Baseline",1,"LumA",2,0.222
+"Baseline",1,"Normal",3,0.333
+"Baseline",2,"Basal",3,0.3
+"Baseline",2,"LumB",1,0.1
+"Baseline",2,"LumA",4,0.4
+"Baseline",2,"Normal",2,0.2

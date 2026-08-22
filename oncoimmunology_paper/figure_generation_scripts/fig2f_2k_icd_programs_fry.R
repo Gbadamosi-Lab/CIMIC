@@ -419,17 +419,18 @@ fry_res <- limma::fry(
 
 str_wrap_length <- 40
 
+# Use FDR-adjusted p-values for significance labeling in the main ICD program analysis.
 sig_df <- fry_res %>%
   as.data.frame() %>%
   rownames_to_column("Program") %>%
   mutate(
     signif_label = case_when(
-      PValue <= 0.0001 ~ "****",
-      PValue <= 0.001  ~ "***",
-      PValue <= 0.01   ~ "**",
-      PValue <= 0.05   ~ "*",
-      PValue <  0.15   ~ sprintf("p = %.3g", PValue),
-      TRUE             ~ "ns"
+      FDR <= 0.0001 ~ "****",
+      FDR <= 0.001  ~ "***",
+      FDR <= 0.01   ~ "**",
+      FDR <= 0.05   ~ "*",
+      FDR <  0.15   ~ sprintf("p = %.3g", FDR),
+      TRUE          ~ "ns"
     )
   ) %>%
   dplyr::select(Program, signif_label)

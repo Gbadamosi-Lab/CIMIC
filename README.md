@@ -108,6 +108,35 @@ reproducible trajectories:
 
 ---
 
+---
+## Interpreting CIMIC output
+
+CIMIC is an unsupervised clustering pipeline: it groups samples into candidate
+CIM trajectories using iteratively refined, cluster-informative gene subsets.
+It does **not** perform or output confirmatory statistical testing, and its
+internal per-gene statistics (p-values, adjusted p-values, effect sizes) are
+selection criteria used only to refine gene sets for clustering — they are
+not, and should not be interpreted as, differential expression results.
+
+CIMIC output is hypothesis-generating. After running CIMIC, users should:
+
+1. **Independently test** whether genes driving a cluster are differentially
+   induced between clusters, using a standard DE framework appropriate to
+   their data — not the internal selection statistics from the pipeline.
+2. **Characterize clusters biologically** (pathway enrichment, known marker
+   genes, functional annotation) to confirm the partition reflects a
+   coherent, interpretable biological process rather than an artifact of
+   the feature-refinement procedure.
+3. **Validate against data not used in clustering** where possible — clinical
+   variables, outcomes, orthogonal datasets, or independent cohorts — since
+   this provides the strongest evidence that a discovered trajectory is real
+   and not a description of the algorithm's own optimization objective.
+
+CIMIC is designed to propose candidate structure in unsupervised settings
+where no ground truth exists. Every partition it returns should be treated
+as a hypothesis to be tested, not a validated finding.
+---
+
 ## Requirements
 
 ### R version

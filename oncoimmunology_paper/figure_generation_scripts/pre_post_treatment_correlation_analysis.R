@@ -139,9 +139,8 @@ average_correlation <- function(corr_df) {
 
 # ---------------------------------------------------------------------------
 # Shared boxplot builder: |rho| for "Delta vs Pre" vs "Pre vs Post"
-# When `shape_var` is supplied, points are shaped by that column and a
-# "Cell line" legend is added (same shape palette as
-# fig5_tnbc_cl_viral_mimicry_fry.R).
+# If a `cluster` column exists, the plot is faceted by cluster (C1 / C2).
+# Optional `shape_var` can be supplied (e.g., cell line) to map point shapes.
 # ---------------------------------------------------------------------------
 build_boxplot <- function(corr_df, title, shape_var = NULL) {
   corr_df$comparison <- factor(corr_df$comparison, levels = c("Delta vs Pre", "Pre vs Post"))
@@ -159,33 +158,36 @@ build_boxplot <- function(corr_df, title, shape_var = NULL) {
   )
 
   fill_colors <- c("Delta vs Pre" = "#F8766D", "Pre vs Post" = "#00BFC4")
-  # Position the significance label near the top of the plot
   star_y <- max(corr_df$abs_rho, na.rm = TRUE) * 1.05
 
   p <- ggplot(corr_df, aes(x = comparison, y = rho, fill = comparison)) +
     geom_boxplot(outlier.shape = NA, colour = "black", width = 0.6, alpha = 0.75)
 
-  if (!is.null(shape_var)) {
-    shape_values <- c(16, 17, 15, 18, 8, 3, 4, 7, 10)
-    cell_lines <- sort(unique(corr_df[[shape_var]]))
-    cell_line_shapes <- setNames(rep(shape_values, length.out = length(cell_lines)), cell_lines)
-
+  # Jitter points – optionally map shape
+  if (!is.null(shape_var) && shape_var %in% colnames(corr_df)) {
+    # Limit to 6 distinct shapes for readability. Any extra categories are
+    # assigned the first shape in the palette.
+    shape_palette <- c(16, 17, 15, 18, 8, 3)
+    # Replace missing values with a placeholder so they are not dropped.
+    corr_df[[shape_var]] <- ifelse(is.na(corr_df[[shape_var]]), "Other", corr_df[[shape_var]])
+    vals <- sort(unique(corr_df[[shape_var]]))
+    # Map each value to a shape, recycling the palette if more than 6 levels.
+    shape_map <- setNames(rep(shape_palette, length.out = length(vals)), vals)
     p <- p +
       geom_jitter(aes(shape = .data[[shape_var]]), width = 0.15, size = 5, colour = "black", alpha = 0.75) +
-      scale_shape_manual(name = "Cell line", values = cell_line_shapes)
+      scale_shape_manual(name = "Cell line", values = shape_map)
   } else {
     p <- p + geom_jitter(width = 0.15, size = 2.5, colour = "black", alpha = 0.6)
   }
 
-  # Compute average rho per comparison for annotation
+  # Average rho annotations
   avg_df <- corr_df %>%
     dplyr::group_by(comparison) %>%
     dplyr::summarise(mean_rho = mean(rho, na.rm = TRUE)) %>%
     dplyr::ungroup()
 
-  p +
+  p <- p +
     annotate("text", x = 1.5, y = star_y, label = signif_label, size = 8, fontface = "bold") +
-    # Average rho annotations placed just below the x‑axis (y = -0.95)
     annotate("text", x = 1, y = -0.95,
              label = sprintf("avg \u03C1 = %.3f", avg_df$mean_rho[avg_df$comparison == "Delta vs Pre"]),
              size = 5) +
@@ -195,7 +197,14 @@ build_boxplot <- function(corr_df, title, shape_var = NULL) {
     geom_hline(yintercept = 0, linetype = "dotted", colour = "black") +
     scale_fill_manual(values = fill_colors, guide = "none") +
     labs(title = title, x = NULL, y = expression("Spearman " * rho)) +
-    coord_cartesian(ylim = c(-1, 1)) +
+    coord_cartesian(ylim = c(-1, 1))
+
+  # Facet by cluster if present
+  if ("cluster" %in% colnames(corr_df)) {
+    p <- p + facet_wrap(~cluster)
+  }
+
+  p +
     theme_classic(base_size = 18) +
     theme(
       axis.text.x   = element_text(face = "bold", size = 20, colour = "black"),
@@ -231,6 +240,20 @@ nki_pre_mat  <- nki_pre_mat[nki_keep, , drop = FALSE]
 nki_post_mat <- nki_post_mat[nki_keep, , drop = FALSE]
 
 nki_corr <- compute_pre_post_correlations(nki_pre_mat, nki_post_mat, nki_prefixes)
+# Add CIMIC cluster information (C1 = Dys‑CIM, C2 = Fun‑CIM)
+# Load clustered data and align sample IDs (remove trailing "_delta" if present)
+clustered_nki <- data.table::fread("oncoimmunology_paper/Datasets/NKI_SMC/nki_smc_combine_clustered_plot_df.csv")
+if ("cluster_assignments" %in% colnames(clustered_nki)) {
+  clustered_nki <- clustered_nki %>% dplyr::rename(CIMIC_Cluster = cluster_assignments)
+}
+# Ensure sample_id matches the correlation IDs (strip "_delta" suffix)
+clustered_nki <- clustered_nki %>%
+  dplyr::mutate(sample_id = sub("_delta$", "", sample_id))
+cluster_map_nki <- c("1" = "C1", "2" = "C2")
+nki_corr <- nki_corr %>%
+  dplyr::left_join(clustered_nki %>% dplyr::select(sample_id, CIMIC_Cluster), by = "sample_id") %>%
+  dplyr::mutate(cluster = cluster_map_nki[as.character(CIMIC_Cluster)])
+
 write.csv(nki_corr, file.path(results_dir, "pre_post_treatment_correlation_nki_smc.csv"), row.names = FALSE)
 
 # Save average correlation per comparison for NKI_SMC
@@ -267,6 +290,21 @@ neo_pre_mat  <- neo_pre_mat[neo_keep, , drop = FALSE]
 neo_post_mat <- neo_post_mat[neo_keep, , drop = FALSE]
 
 neo_corr <- compute_pre_post_correlations(neo_pre_mat, neo_post_mat, neo_pre_prefix)
+# Add CIMIC cluster information (C1 = Dys‑CIM, C2 = Fun‑CIM)
+clustered_neo <- data.table::fread("oncoimmunology_paper/Datasets/NEO/neo_clustered_plot_df.csv")
+if ("cluster_assignments" %in% colnames(clustered_neo)) {
+  clustered_neo <- clustered_neo %>% dplyr::rename(CIMIC_Cluster = cluster_assignments)
+}
+# Align sample IDs if they contain a suffix (e.g., "_delta")
+if ("sample_id" %in% colnames(clustered_neo)) {
+  clustered_neo <- clustered_neo %>%
+    dplyr::mutate(sample_id = sub("_delta$", "", sample_id))
+}
+cluster_map_neo <- c("1" = "C1", "2" = "C2")
+neo_corr <- neo_corr %>%
+  dplyr::left_join(clustered_neo %>% dplyr::select(sample_id, CIMIC_Cluster), by = "sample_id") %>%
+  dplyr::mutate(cluster = cluster_map_neo[as.character(CIMIC_Cluster)])
+
 write.csv(neo_corr, file.path(results_dir, "pre_post_treatment_correlation_neo.csv"), row.names = FALSE)
 
 # Save average correlation per comparison for NEO
@@ -311,6 +349,19 @@ tnbc_pre_mat_expanded <- tnbc_baseline_mat[, tnbc_epi_cell_line, drop = FALSE]
 
 tnbc_corr <- compute_pre_post_correlations(tnbc_pre_mat_expanded, tnbc_epi_mat, tnbc_epi_cols)
 tnbc_corr$cell_line <- sub("_EPI_R[0-9]+$", "", tnbc_corr$sample_id)
+# Add CIMIC cluster information (C1 = Fun‑CIM, C2 = Dys‑CIM for TNBC)
+clustered_tnbc <- data.table::fread("oncoimmunology_paper/Datasets/TNBC_CL_Epirubicin/tnbc_cl_epi_clustered_plot_df.csv")
+if ("cluster_assignments" %in% colnames(clustered_tnbc)) {
+  clustered_tnbc <- clustered_tnbc %>% dplyr::rename(CIMIC_Cluster = cluster_assignments)
+}
+# Keep a single row per cell line (base_id) for cluster assignment
+clustered_tnbc <- clustered_tnbc %>%
+  dplyr::select(base_id, CIMIC_Cluster) %>%
+  dplyr::distinct(base_id, .keep_all = TRUE)
+cluster_map_tnbc <- c("1" = "C2", "2" = "C1")
+tnbc_corr <- tnbc_corr %>%
+  dplyr::left_join(clustered_tnbc, by = c("cell_line" = "base_id")) %>%
+  dplyr::mutate(cluster = cluster_map_tnbc[as.character(CIMIC_Cluster)])
 write.csv(tnbc_corr, file.path(results_dir, "pre_post_treatment_correlation_tnbc_cl.csv"), row.names = FALSE)
 
 # Save average correlation per comparison for TNBC_CL_Epirubicin

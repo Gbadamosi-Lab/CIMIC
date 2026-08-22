@@ -1,0 +1,2735 @@
+---
+title: "NEO Immune Deconvolution Pipeline — Compact Figure Outputs"
+author: "Gbadamosi Lab"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    theme: readable
+params:
+  project_root: ""
+  dataset_subdir: "Datasets/NEO"
+  results_subdir: "Results/neo_immunedeconv"
+  expression_file: "neo_tpm.csv"
+  cluster_file: "neo_clustered_plot_df.csv"
+  cibersortx_file: "CIBERSORTx_neo_tpm_rel.csv"
+  cluster1_label: "Dys-CIM"
+  cluster2_label: "Fun-CIM"
+  run_immunedeconv: true
+  run_cibersortx_import: true
+  make_plots: true
+  make_heatmaps: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = TRUE,
+  warning = TRUE,
+  error = FALSE,
+  fig.align = "center"
+)
+```
+
+# Overview
+
+This compact R Markdown document runs the CIMIC immune-infiltration workflow for the **NEO paired neoadjuvant dataset** while preserving the analysis/statistical/plotting conventions of `CIM_Immunedeconv_pipeline_compact_v1.5.Rmd`.
+
+The primary unit for all inferential analyses and figures is the **patient**.
+
+1. Loads non-log-transformed NEO TPM (`neo_tpm.csv`).
+2. Loads NEO CIMIC assignments (`neo_clustered_plot_df.csv`), where IDs such as `NEO11_Patient_11_delta` are converted to patient keys.
+3. Harmonizes NEO expression IDs such as `NEO11 _Patient_11_T1_B_Rep1` and `NEO11 _Patient_11_T4_S_Rep1` to the same patient/timepoint representation used by the cluster table.
+4. Maps NEO numeric clusters to biological CIM labels through the YAML parameters `cluster1_label` and `cluster2_label`. For this NEO analysis, the configured mapping is **1 = Dys-CIM** and **2 = Fun-CIM**.
+5. Performs strict sample/timepoint/cluster QC and prevents duplicate patient-level observations from silently entering statistics or figures.
+6. Runs the same immunedeconv methods used in the compact NKI/SMC workflow.
+7. Imports `CIBERSORTx_neo_tpm_rel.csv`, removes CIBERSORTx QC columns before reshaping, and harmonizes its NEO IDs independently.
+8. Uses the same xCell/CIBERSORTx T-cell aggregation logic as compact v1.5.
+9. Performs two-sided **Wilcoxon rank-sum tests** for unpaired Fun-CIM versus Dys-CIM comparisons at Biopsy and Surgery.
+10. Performs two-sided **Wilcoxon signed-rank tests** for paired Biopsy-to-Surgery comparisons within each CIM trajectory using complete finite patient pairs.
+11. Generates the same compact figure/table outputs and method-centered folder organization as v1.5.
+
+## NEO input conventions
+
+Expected input paths are supplied in the YAML above. Forward slashes are used intentionally because they are safe in R on Windows.
+
+Expression IDs may contain whitespace and T1/T4 labels, for example:
+
+```text
+NEO11 _Patient_11_T1_B_Rep1
+NEO11 _Patient_11_T4_S_Rep1
+```
+
+The parser removes whitespace and the intermediate `T#` token and recognizes `_B_Rep#` as Biopsy and `_S_Rep#` as Surgery.
+
+Cluster IDs are expected in the form:
+
+```text
+NEO11_Patient_11_delta
+```
+
+The cluster table must contain `sample_id` and `cluster_assignments`. Additional columns (UMAP, PaCMAP, PCA, genes, etc.) are ignored.
+
+# Reproducibility notes
+
+This workflow uses a fixed random seed and saves package/session information at the end of each run. For a GitHub release, using `renv` is strongly recommended so collaborators can restore the same R package versions.
+
+```r
+install.packages("renv")
+renv::init()
+renv::snapshot()
+```
+
+On another machine:
+
+```r
+renv::restore()
+```
+
+# Package setup
+
+This document does not install packages during analysis. Install dependencies once before running the workflow.
+
+```{r packages}
+required_packages <- c(
+  "data.table", "dplyr", "tidyr", "tibble", "stringr", "purrr",
+  "ggplot2", "readr", "ComplexHeatmap", "circlize", "withr",
+  "FSA", "grid", "knitr"
+)
+
+missing_packages <- required_packages[
+  !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
+]
+
+if (length(missing_packages) > 0) {
+  stop(
+    "Missing required packages: ",
+    paste(missing_packages, collapse = ", "),
+    "\nInstall them before running this R Markdown. ",
+    "For Bioconductor packages, use BiocManager."
+  )
+}
+
+if (!requireNamespace("immunedeconv", quietly = TRUE)) {
+  stop(
+    "Package 'immunedeconv' is not installed.\n",
+    "Install it with:\n",
+    "remotes::install_github('omnideconv/immunedeconv')"
+  )
+}
+
+suppressPackageStartupMessages({
+  library(data.table)
+  library(immunedeconv)
+  library(dplyr)
+  library(tidyr)
+  library(tibble)
+  library(stringr)
+  library(purrr)
+  library(ggplot2)
+  library(readr)
+  library(ComplexHeatmap)
+  library(circlize)
+  library(withr)
+  library(FSA)
+  library(grid)
+})
+
+cat("All required packages loaded successfully.\n")
+```
+
+# Configuration
+
+
+```{r config}
+set.seed(2025)
+options(stringsAsFactors = FALSE, scipen = 999)
+
+# ---- Repository-aware path resolution -------------------------------------
+# Expected repository layout:
+#   oncoimmunology_paper/
+#   ├── figure_generation_scripts/
+#   │   └── NEO_Immunedeconv_pipeline_compact_v1.2.Rmd
+#   ├── Datasets/
+#   │   └── NEO/
+#   │       ├── neo_tpm.csv
+#   │       ├── neo_clustered_plot_df.csv
+#   │       └── CIBERSORTx_neo_tpm_rel.csv
+#   └── Results/
+#       └── NEO/
+#           └── CIMimmune/
+#
+# With project_root="" (recommended), the repository root is inferred as the
+# parent of figure_generation_scripts/. This makes the Rmd portable across
+# users/computers and avoids hard-coded OneDrive paths.
+
+# No machine-specific absolute paths are required. If project_root is left
+# empty (recommended), the project root is inferred as the parent directory
+# of this Rmd. An explicit project_root can still be supplied to
+# rmarkdown::render() for non-standard execution environments.
+
+resolve_rmd_path <- function() {
+  # Preferred during knitting/rendering.
+  input <- tryCatch(knitr::current_input(dir = TRUE), error = function(e) "")
+  if (!is.null(input) && length(input) == 1 && nzchar(input) && file.exists(input)) {
+    return(normalizePath(input, winslash = "/", mustWork = TRUE))
+  }
+
+  # Helpful when sourced interactively from RStudio.
+  if (requireNamespace("rstudioapi", quietly = TRUE) &&
+      rstudioapi::isAvailable()) {
+    ctx_path <- tryCatch(rstudioapi::getSourceEditorContext()$path,
+                         error = function(e) "")
+    if (nzchar(ctx_path) && file.exists(ctx_path)) {
+      return(normalizePath(ctx_path, winslash = "/", mustWork = TRUE))
+    }
+  }
+
+  return(NA_character_)
+}
+
+RMD_PATH <- resolve_rmd_path()
+
+if (!is.null(params$project_root) &&
+    length(params$project_root) == 1 &&
+    !is.na(params$project_root) &&
+    nzchar(params$project_root)) {
+  PROJECT_DIR <- normalizePath(
+    params$project_root, winslash = "/", mustWork = TRUE
+  )
+} else {
+  if (is.na(RMD_PATH)) {
+    stop(
+      "Could not determine the Rmd location automatically. ",
+      "Render the Rmd normally from the repository or provide ",
+      "params = list(project_root = '/path/to/oncoimmunology_paper').",
+      call. = FALSE
+    )
+  }
+  SCRIPT_DIR <- dirname(RMD_PATH)
+  PROJECT_DIR <- normalizePath(
+    file.path(SCRIPT_DIR, ".."), winslash = "/", mustWork = TRUE
+  )
+}
+
+is_absolute_path <- function(x) {
+  grepl("^[A-Za-z]:[/\\]|^/|^~", x)
+}
+
+resolve_param_path <- function(base_dir, x, must_work = FALSE) {
+  candidate <- if (is_absolute_path(x)) x else file.path(base_dir, x)
+  normalizePath(candidate, winslash = "/", mustWork = must_work)
+}
+
+# dataset_subdir/results_subdir may be either repository-relative or absolute.
+# Absolute paths are used directly so they are never appended to PROJECT_DIR.
+DATA_DIR <- resolve_param_path(PROJECT_DIR, params$dataset_subdir, must_work = TRUE)
+RESULTS_DIR <- resolve_param_path(PROJECT_DIR, params$results_subdir, must_work = FALSE)
+
+FILES <- list(
+  combined_expr = file.path(DATA_DIR, params$expression_file),
+  clusters = file.path(DATA_DIR, params$cluster_file),
+  cibersortx = file.path(DATA_DIR, params$cibersortx_file)
+)
+
+# CIBERSORTx file-name fallback for older repository copies. The configured
+# YAML name is always preferred; fallback is used only when it is absent.
+if (!file.exists(FILES$cibersortx)) {
+  ciber_candidates <- file.path(
+    DATA_DIR,
+    c(
+      "CIBERSORTx_NEO_rel1.txt",
+      "CIBERSORTx_NEO_rel1.csv"
+    )
+  )
+  ciber_found <- ciber_candidates[file.exists(ciber_candidates)]
+  if (length(ciber_found) >= 1) {
+    FILES$cibersortx <- ciber_found[1]
+    message("Using detected CIBERSORTx input: ", basename(FILES$cibersortx))
+  }
+}
+
+DIRS <- list(
+  project = PROJECT_DIR,
+  data = DATA_DIR,
+  results = RESULTS_DIR,
+  plots = file.path(RESULTS_DIR, "figures"),
+  tables = file.path(RESULTS_DIR, "tables"),
+  # Keep transient/cache paths short to reduce Windows path-length problems.
+  logs = file.path(RESULTS_DIR, "log"),
+  tmp = file.path(PROJECT_DIR, ".tmp_cim"),
+  cache = file.path(PROJECT_DIR, ".cache_cim")
+)
+
+if (!dir.exists(DATA_DIR)) {
+  stop(
+    "Expected data directory was not found:\n  ", DATA_DIR,
+    "\n\nExpected repository layout: ",
+    "<project>/Datasets/NEO",
+    call. = FALSE
+  )
+}
+
+invisible(lapply(
+  DIRS[c("results", "plots", "tables", "logs", "tmp", "cache")],
+  dir.create, recursive = TRUE, showWarnings = FALSE
+))
+
+cat("Project root: ", PROJECT_DIR, "\n", sep = "")
+cat("Input data:   ", DATA_DIR, "\n", sep = "")
+cat("Results:      ", RESULTS_DIR, "\n", sep = "")
+
+Sys.setenv(TMPDIR = DIRS$tmp)
+Sys.setenv(TEMP = DIRS$tmp)
+Sys.setenv(TMP = DIRS$tmp)
+options(ExperimentHub.cache = DIRS$cache)
+
+LOG_FILE <- file.path(
+  DIRS$logs,
+  paste0("run_log_NEO_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".txt")
+)
+
+METHODS_TO_RUN <- c(
+  "quantiseq", "epic", "xcell", "mcp_counter",
+  "estimate", "timer", "consensus_tme"
+)
+
+TUMOR_INDICATION <- "BRCA"
+
+GENE_COL_CANDIDATES <- c(
+  "gene_id", "gene", "hgnc_symbol", "symbol", "Gene", "GeneSymbol"
+)
+
+INDEX_COL_PATTERNS <- c(
+  "^Unnamed(:|\\.)?",
+  "^X$",
+  "^V1$"
+)
+
+METHOD_ORDER <- c(
+  "CIBERSORTx", "quantiseq", "epic", "mcp_counter", "estimate",
+  "xcell", "timer", "consensus_tme"
+)
+
+AGGREGATE_XCELL_TCELLS <- TRUE
+AGGREGATE_CIBERSORT_TCELLS <- TRUE
+CIBERSORT_AGGREGATION_STRATEGY <- "refined" # "refined" or "simple"
+
+# NEO numeric CIMIC cluster IDs -> biological labels.
+# Defaults are parameterized in YAML so the mapping is explicit and easy to audit.
+USE_CLUSTER_MAPPING <- TRUE
+CLUSTER_MAPPING <- c(
+  "1" = as.character(params$cluster1_label),
+  "2" = as.character(params$cluster2_label)
+)
+
+cluster_colors <- c(
+  "Fun-CIM" = "#4DB6AC",
+  "Dys-CIM" = "#F08A8A"
+)
+
+# Paired figures encode timepoint with color while keeping the paired lines gray.
+TIMEPOINT_COLORS <- c(
+  "Biopsy" = "#1F77B4",
+  "Surgery" = "#9467BD"
+)
+
+# Minimum sample-size safeguards for inferential tests.
+MIN_UNPAIRED_GROUP_N <- 2L
+MIN_PAIRED_N <- 3L
+
+missing_cluster_colors <- base::setdiff(unique(unname(CLUSTER_MAPPING)), names(cluster_colors))
+if (length(missing_cluster_colors) > 0) {
+  stop("Missing cluster colors for: ", paste(missing_cluster_colors, collapse = ", "))
+}
+
+METHOD_COLORS <- c(
+  "quantiseq" = "#1F77B4",
+  "epic" = "#FF7F0E",
+  "xcell" = "#2CA02C",
+  "mcp_counter" = "#D62728",
+  "estimate" = "#9467BD",
+  "timer" = "#8C564B",
+  "consensus_tme" = "#E377C2",
+  "CIBERSORTx" = "#FFD700"
+)
+
+# Plot aesthetics shared by unpaired and paired figures.
+# CIM trajectory colors remain the primary visual encoding in both plot types.
+PLOT_WIDTH_UNPAIRED <- 4.9
+PLOT_HEIGHT_UNPAIRED <- 4.2
+PLOT_WIDTH_PAIRED <- PLOT_WIDTH_UNPAIRED
+PLOT_HEIGHT_PAIRED <- PLOT_HEIGHT_UNPAIRED
+PLOT_DPI <- 300
+
+PLOT_BOX_ALPHA <- 0.70
+PLOT_BOX_WIDTH <- 0.58
+PLOT_BOX_LINEWIDTH <- 0.80
+PLOT_UNPAIRED_POINT_SIZE <- 2.0
+PLOT_UNPAIRED_POINT_ALPHA <- 0.65
+PLOT_JITTER_WIDTH <- 0.15
+PLOT_PAIRED_POINT_SIZE <- 2.8
+PLOT_PAIRED_POINT_ALPHA <- 0.85
+PLOT_PAIRED_LINE_ALPHA <- 0.70
+PLOT_PAIRED_LINE_WIDTH <- 0.9
+PLOT_PAIRED_LINE_COLOR <- "gray65"
+PLOT_P_ANNOTATION_SIZE <- 6.2
+
+# Compact-output option. Aggregated plots are always generated when make_plots = TRUE.
+# Set TRUE only when original (non-T-cell-aggregated) plots are also needed.
+MAKE_ORIGINAL_PLOTS <- FALSE
+# MAKE_ORIGINAL_PLOTS <- TRUE
+```
+
+# Helper functions
+
+```{r helpers}
+validate_file <- function(path, required = TRUE) {
+  if (!file.exists(path)) {
+    msg <- paste0("File not found: ", path)
+    if (required) stop(msg, call. = FALSE) else warning(msg, call. = FALSE)
+    return(FALSE)
+  }
+  TRUE
+}
+
+sanitize_filename <- function(x) gsub("[^A-Za-z0-9]+", "_", x)
+safe_stem <- function(...) sanitize_filename(paste(..., sep = "_"))
+method_dir_name <- function(x) sanitize_filename(x)
+cluster_file_label <- function(x) {
+  x <- as.character(x)
+  dplyr::case_when(
+    x == "Fun-CIM" ~ "FunCIM",
+    x == "Dys-CIM" ~ "DysCIM",
+    TRUE ~ sanitize_filename(x)
+  )
+}
+
+method_value_type <- function(m) {
+  switch(m,
+    "quantiseq" = "Cell Fraction",
+    "epic" = "Cell Fraction",
+    "mcp_counter" = "Abundance Score",
+    "xcell" = "Enrichment Score",
+    "timer" = "Infiltration Score",
+    "consensus_tme" = "ssGSEA Score",
+    "estimate" = "ESTIMATE Score",
+    "CIBERSORTx" = "Cell Fraction",
+    "Score"
+  )
+}
+
+auto_ylims <- function(values, ymin_floor = 0) {
+  v <- values[is.finite(values)]
+  if (!length(v)) return(c(ymin_floor, ymin_floor + 0.01))
+  ymin <- ymin_floor
+  ymax <- max(v, na.rm = TRUE)
+  yr <- ymax - ymin
+  if (yr <= 0) yr <- max(abs(ymax) * 0.15, 0.01)
+  c(ymin, ymax + 0.18 * yr)
+}
+
+safe_zscore <- function(x) {
+  x <- as.numeric(x)
+  s <- sd(x, na.rm = TRUE)
+  if (is.na(s) || s == 0) return(rep(0, length(x)))
+  as.numeric((x - mean(x, na.rm = TRUE)) / s)
+}
+
+apply_cluster_mapping <- function(df, cluster_col = "cluster") {
+  # Apply the user-defined cluster mapping to the analysis cluster column.
+  # This is the central rule used throughout the workflow.
+  # NEO mapping is read from CLUSTER_MAPPING, which is parameterized in YAML.
+  # All downstream statistics, plots, paired analyses, and heatmaps use these
+  # biological groups rather than source cohort.
+  if (!USE_CLUSTER_MAPPING) return(df)
+  if (!cluster_col %in% names(df)) return(df)
+
+  original_cluster <- as.character(df[[cluster_col]])
+  mapped_cluster <- dplyr::recode(
+    original_cluster,
+    !!!CLUSTER_MAPPING,
+    .default = original_cluster
+  )
+
+  mapped_levels <- unique(unname(CLUSTER_MAPPING))
+  extra_levels <- unique(mapped_cluster[!mapped_cluster %in% mapped_levels])
+  final_levels <- unique(c(mapped_levels, extra_levels))
+
+  if (!"cluster_original" %in% names(df)) {
+    df$cluster_original <- original_cluster
+  }
+
+  df[[cluster_col]] <- factor(mapped_cluster, levels = final_levels)
+  df
+}
+
+# Backward-compatible alias used by earlier versions of the workflow.
+apply_cluster_names <- apply_cluster_mapping
+
+theme_pub <- function() {
+  theme_classic() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5, size = 16, face = "bold"),
+      axis.text = element_text(size = 16, face = "bold"),
+      axis.title = element_text(size = 20, face = "bold"),
+      axis.title.x = element_text(margin = margin(t = 15)),
+      axis.ticks = element_line(linewidth = 1.1),
+      axis.line = element_line(linewidth = 1),
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      legend.title = element_text(size = 16, face = "bold"),
+      legend.text = element_text(size = 16),
+      strip.text = element_text(size = 18, face = "bold"),
+      strip.background = element_rect(fill = "white", color = "black", linewidth = 1),
+      plot.margin = margin(t = 10, r = 10, b = 50, l = 10)
+    )
+}
+```
+
+# Sample ID harmonization
+
+All NEO input sources are converted to the same canonical patient identifier before joining metadata. This prevents whitespace, T1/T4 tokens, timepoint suffixes, and CIBERSORTx replicate suffixes from silently breaking joins.
+
+```{r id-parsing}
+
+# NEO uses several equivalent sample-name forms across TPM/CIBERSORTx:
+#   NEO11 _Patient_11_T1_B_Rep1
+#   NEO11 _Patient_11_T4_S_Rep1
+#   NEO11 _Patient_11_B_Rep1
+#
+# Cluster IDs use:
+#   NEO11_Patient_11_delta
+#
+# Whitespace and the intermediate T# token are removed before parsing.
+normalize_sample_id <- function(x) {
+  x %>%
+    as.character() %>%
+    stringr::str_trim() %>%
+    stringr::str_replace_all('^"|"$', "") %>%
+    stringr::str_replace_all("\\s+", "")
+}
+
+clean_neo_sample_id <- function(x) {
+  normalize_sample_id(x) %>%
+    stringr::str_replace("_T\\d+_(B|S)_Rep(\\d+)$", "_\\1_Rep\\2")
+}
+
+get_timepoint <- function(sample_id) {
+  x <- clean_neo_sample_id(sample_id)
+  dplyr::case_when(
+    stringr::str_detect(x, "_B_Rep\\d+$") ~ "Biopsy",
+    stringr::str_detect(x, "_S_Rep\\d+$") ~ "Surgery",
+    stringr::str_detect(x, "_B$") ~ "Biopsy",
+    stringr::str_detect(x, "_S$") ~ "Surgery",
+    TRUE ~ NA_character_
+  )
+}
+
+get_patient_id_from_sample <- function(sample_id) {
+  clean_neo_sample_id(sample_id) %>%
+    stringr::str_remove("_(B|S)_Rep\\d+$") %>%
+    stringr::str_remove("_(B|S)$") %>%
+    stringr::str_remove("_delta$")
+}
+
+get_patient_key_from_expression <- function(sample_id) {
+  get_patient_id_from_sample(sample_id) %>%
+    stringr::str_replace("_Patient_", "_")
+}
+
+get_patient_key_from_cluster <- function(delta_id) {
+  normalize_sample_id(delta_id) %>%
+    stringr::str_remove("_delta$") %>%
+    stringr::str_replace("_Patient_", "_")
+}
+
+get_patient_key_from_cibersortx <- function(sample_id) {
+  get_patient_id_from_sample(sample_id) %>%
+    stringr::str_replace("_Patient_", "_")
+}
+
+canonical_neo_sample_id <- function(sample_id) {
+  tp <- get_timepoint(sample_id)
+  key <- get_patient_key_from_expression(sample_id)
+  ifelse(
+    tp == "Biopsy", paste0(key, "_B"),
+    ifelse(tp == "Surgery", paste0(key, "_S"), NA_character_)
+  )
+}
+
+
+infer_dataset <- function(patient_key) {
+  rep("NEO", length(patient_key))
+}
+
+# Parser self-test: these representative IDs must resolve identically.
+.parser_test_ids <- c(
+  "NEO11 _Patient_11_T1_B_Rep1",
+  "NEO11 _Patient_11_T4_S_Rep1"
+)
+.parser_test_clean <- clean_neo_sample_id(.parser_test_ids)
+stopifnot(
+  identical(.parser_test_clean, c(
+    "NEO11_Patient_11_B_Rep1",
+    "NEO11_Patient_11_S_Rep1"
+  )),
+  identical(as.character(get_timepoint(.parser_test_ids)), c("Biopsy", "Surgery")),
+  identical(
+    get_patient_key_from_expression(.parser_test_ids),
+    c("NEO11_11", "NEO11_11")
+  ),
+  identical(
+    get_patient_key_from_cluster("NEO11_Patient_11_delta"),
+    "NEO11_11"
+  )
+)
+rm(.parser_test_ids, .parser_test_clean)
+```
+
+# Validate inputs
+
+```{r validate-inputs}
+
+validate_file(FILES$combined_expr, required = TRUE)
+validate_file(FILES$clusters, required = TRUE)
+if (params$run_cibersortx_import) {
+  validate_file(FILES$cibersortx, required = TRUE)
+}
+
+cat("NEO expression file:", FILES$combined_expr, "
+")
+cat("NEO cluster file:   ", FILES$clusters, "
+")
+if (params$run_cibersortx_import) {
+  cat("NEO CIBERSORTx:     ", FILES$cibersortx, "
+")
+}
+```
+
+# Load combined CIMIC cluster table
+
+Only `sample_id` and `cluster_assignments` are required. Other dimensional-reduction columns present in the clustered plotting file are ignored.
+
+```{r load-clusters}
+
+clusters_raw <- readr::read_csv(FILES$clusters, show_col_types = FALSE)
+
+required_cluster_cols <- c("sample_id", "cluster_assignments")
+missing_cluster_cols <- setdiff(required_cluster_cols, names(clusters_raw))
+if (length(missing_cluster_cols) > 0) {
+  stop(
+    "NEO cluster file is missing required column(s): ",
+    paste(missing_cluster_cols, collapse = ", "),
+    call. = FALSE
+  )
+}
+
+clusters <- clusters_raw %>%
+  transmute(
+    delta_sample_id = normalize_sample_id(sample_id),
+    patient_key = get_patient_key_from_cluster(delta_sample_id),
+    cluster = as.character(cluster_assignments)
+  )
+
+if (any(is.na(clusters$patient_key) | clusters$patient_key == "")) {
+  stop("Missing/empty NEO patient keys after parsing cluster sample_id.", call. = FALSE)
+}
+
+bad_clusters <- setdiff(unique(clusters$cluster), names(CLUSTER_MAPPING))
+if (length(bad_clusters) > 0) {
+  stop(
+    "Unexpected NEO cluster assignment(s): ",
+    paste(bad_clusters, collapse = ", "),
+    ". Expected: ", paste(names(CLUSTER_MAPPING), collapse = ", "),
+    call. = FALSE
+  )
+}
+
+dup_cluster_patients <- clusters %>%
+  count(patient_key, name = "n_rows") %>%
+  filter(n_rows > 1)
+
+if (nrow(dup_cluster_patients) > 0) {
+  stop(
+    "NEO cluster file has duplicate patient rows after ID parsing: ",
+    paste(dup_cluster_patients$patient_key, collapse = ", "),
+    call. = FALSE
+  )
+}
+
+clusters <- clusters %>%
+  mutate(cluster = factor(cluster, levels = names(CLUSTER_MAPPING)))
+
+cluster_qc <- clusters %>%
+  count(cluster, name = "n_patients") %>%
+  mutate(
+    CIM_label = dplyr::recode(as.character(cluster), !!!CLUSTER_MAPPING)
+  )
+
+knitr::kable(cluster_qc, caption = "NEO CIMIC cluster assignments")
+```
+
+# Load combined TPM expression matrix
+
+The input is expected to be non-log TPM. Index-like columns generated by spreadsheet/Python exports (for example `Unnamed: 0`) are removed automatically before selecting the gene identifier column.
+
+```{r load-expression}
+
+load_combined_expr_matrix <- function(path) {
+  df <- data.table::fread(path, data.table = FALSE, check.names = FALSE)
+
+  # Remove accidental CSV row-index columns robustly.
+  #
+  # pandas-style CSV exports may have a blank first header (""). data.table::fread()
+  # renames that blank column to V1, so name-based matching alone is insufficient.
+  # We therefore remove a candidate index column only when:
+  #   1) its name looks like an exported index (Unnamed..., X, or V1), AND
+  #   2) its values are exactly the row sequence 1:nrow(df).
+  #
+  # This prevents a genuine biological/sample column named V1 from being dropped.
+  is_exported_row_index <- function(x, nm, n_rows) {
+    name_is_index <- any(vapply(
+      INDEX_COL_PATTERNS,
+      function(p) grepl(p, nm),
+      logical(1)
+    )) || identical(nm, "V1")
+
+    if (!name_is_index) return(FALSE)
+
+    x_num <- suppressWarnings(as.numeric(x))
+    if (length(x_num) != n_rows || anyNA(x_num)) return(FALSE)
+
+    identical(x_num, as.numeric(seq_len(n_rows)))
+  }
+
+  index_cols <- names(df)[vapply(
+    names(df),
+    function(nm) is_exported_row_index(df[[nm]], nm, nrow(df)),
+    logical(1)
+  )]
+
+  if (length(index_cols) > 0) {
+    message(
+      "Removing non-biological exported row-index column(s): ",
+      paste(index_cols, collapse = ", ")
+    )
+    df[index_cols] <- NULL
+  }
+
+  gene_col <- intersect(GENE_COL_CANDIDATES, names(df))
+  if (length(gene_col) == 0) {
+    stop(
+      "No recognized gene identifier column found. Expected one of: ",
+      paste(GENE_COL_CANDIDATES, collapse = ", "),
+      call. = FALSE
+    )
+  }
+  gene_col <- gene_col[1]
+
+  genes <- trimws(as.character(df[[gene_col]]))
+  if (any(is.na(genes) | genes == "")) {
+    stop("The gene identifier column contains missing/empty values.", call. = FALSE)
+  }
+  if (anyDuplicated(genes)) {
+    dup <- unique(genes[duplicated(genes)])
+    stop(
+      "Duplicate gene identifiers detected. Resolve duplicates before deconvolution. Examples: ",
+      paste(head(dup, 10), collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  expr_df <- df[, setdiff(names(df), gene_col), drop = FALSE]
+  if (ncol(expr_df) == 0) stop("No NEO sample columns found.", call. = FALSE)
+
+  raw_sample_names <- names(expr_df)
+  cleaned_sample_names <- clean_neo_sample_id(raw_sample_names)
+
+  if (any(is.na(cleaned_sample_names) | cleaned_sample_names == "")) {
+    stop("One or more NEO expression sample columns have empty names.", call. = FALSE)
+  }
+  if (anyDuplicated(cleaned_sample_names)) {
+    dup <- unique(cleaned_sample_names[duplicated(cleaned_sample_names)])
+    stop(
+      "Duplicate NEO sample IDs after whitespace/T# harmonization: ",
+      paste(dup, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  bad_sample_names <- cleaned_sample_names[
+    !grepl("_(B|S)_Rep\\d+$", cleaned_sample_names)
+  ]
+  if (length(bad_sample_names) > 0) {
+    stop(
+      "Unexpected NEO expression sample ID(s): ",
+      paste(head(bad_sample_names, 20), collapse = ", "),
+      "\nExpected forms such as NEO11_Patient_11_T1_B_Rep1 or NEO11_Patient_11_T4_S_Rep1.",
+      call. = FALSE
+    )
+  }
+
+  # Informative NEO structure check. This is a warning rather than a hard-coded
+  # requirement so the pipeline remains usable if the cohort is intentionally updated.
+  if (length(cleaned_sample_names) != 38L) {
+    warning(
+      "NEO expression matrix currently contains ", length(cleaned_sample_names),
+      " biological sample columns; the present paired dataset is expected to contain 38 ",
+      "(19 patients x 2 timepoints). Verify the input if this change was not intentional.",
+      call. = FALSE
+    )
+  }
+
+  names(expr_df) <- cleaned_sample_names
+
+  numeric_df <- lapply(expr_df, function(x) suppressWarnings(as.numeric(x)))
+  names(numeric_df) <- names(expr_df)
+
+  bad_cols <- names(expr_df)[vapply(seq_along(expr_df), function(i) {
+    original <- expr_df[[i]]
+    converted <- numeric_df[[i]]
+    any(is.na(converted) & !is.na(original) & trimws(as.character(original)) != "")
+  }, logical(1))]
+
+  if (length(bad_cols) > 0) {
+    stop(
+      "Non-numeric expression values detected in NEO sample column(s): ",
+      paste(bad_cols, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  mat <- do.call(cbind, numeric_df)
+  rownames(mat) <- genes
+  colnames(mat) <- names(expr_df)
+  storage.mode(mat) <- "numeric"
+
+  if (any(!is.finite(mat))) {
+    stop("NEO expression matrix contains NA/NaN/Inf after numeric conversion.", call. = FALSE)
+  }
+
+  message("Loaded NEO matrix: ", nrow(mat), " genes x ", ncol(mat), " samples.")
+  message("First cleaned sample IDs: ", paste(head(colnames(mat), 6), collapse = ", "))
+  mat
+}
+
+check_nonlog_tpm <- function(mat, label = "NEO TPM") {
+  if (any(!is.finite(mat))) stop(label, ": non-finite values detected.", call. = FALSE)
+  mn <- min(mat, na.rm = TRUE)
+  mx <- max(mat, na.rm = TRUE)
+  q99 <- as.numeric(stats::quantile(mat, 0.99, na.rm = TRUE))
+
+  if (mn < 0) stop(label, ": negative values detected; TPM should be non-negative.", call. = FALSE)
+  if (mx < 30) {
+    warning(label, ": maximum value < 30. Verify that neo_tpm.csv is not log transformed.", call. = FALSE)
+  }
+
+  tibble(min = mn, q99 = q99, max = mx)
+}
+
+expr_combined <- load_combined_expr_matrix(FILES$combined_expr)
+tpm_qc <- check_nonlog_tpm(expr_combined)
+knitr::kable(tpm_qc, caption = "NEO TPM scale check")
+```
+
+# Build expression metadata and sample-matching QC
+
+```{r metadata}
+
+build_expression_metadata <- function(sample_ids) {
+  tibble(sample_id = clean_neo_sample_id(sample_ids)) %>%
+    mutate(
+      Timepoint = factor(get_timepoint(sample_id), levels = c("Biopsy", "Surgery")),
+      Patient_ID = get_patient_id_from_sample(sample_id),
+      patient_key = get_patient_key_from_expression(sample_id),
+      dataset = "NEO"
+    ) %>%
+    left_join(clusters %>% select(patient_key, cluster), by = "patient_key") %>%
+    mutate(cluster = factor(cluster, levels = levels(clusters$cluster))) %>%
+    select(sample_id, dataset, Patient_ID, patient_key, Timepoint, cluster)
+}
+
+meta_all <- build_expression_metadata(colnames(expr_combined))
+
+bad_timepoint <- meta_all %>% filter(is.na(Timepoint))
+if (nrow(bad_timepoint) > 0) {
+  stop(
+    "NEO expression sample IDs with unrecognized timepoints: ",
+    paste(bad_timepoint$sample_id, collapse = ", "),
+    call. = FALSE
+  )
+}
+
+# One biological sample per patient/timepoint is required in the expression set.
+expr_patient_timepoint_dups <- meta_all %>%
+  count(Patient_ID, Timepoint, name = "n_samples") %>%
+  filter(n_samples > 1)
+
+if (nrow(expr_patient_timepoint_dups) > 0) {
+  dup_details <- meta_all %>%
+    semi_join(expr_patient_timepoint_dups, by = c("Patient_ID", "Timepoint")) %>%
+    group_by(Patient_ID, Timepoint) %>%
+    summarise(sample_ids = paste(sample_id, collapse = ";"), .groups = "drop")
+  stop(
+    "Multiple NEO expression samples map to the same patient/timepoint. ",
+    "Resolve before deconvolution: ",
+    paste(head(paste0(dup_details$Patient_ID, "/", dup_details$Timepoint, "=", dup_details$sample_ids), 10), collapse = " | "),
+    call. = FALSE
+  )
+}
+
+unmatched_expr <- meta_all %>% filter(is.na(cluster))
+unmatched_cluster <- clusters %>%
+  anti_join(meta_all %>% distinct(patient_key), by = "patient_key")
+
+metadata_summary <- meta_all %>%
+  mutate(has_cluster = !is.na(cluster)) %>%
+  summarise(
+    dataset = "NEO",
+    n_samples = n(),
+    n_patients = n_distinct(patient_key),
+    n_biopsy = sum(Timepoint == "Biopsy"),
+    n_surgery = sum(Timepoint == "Surgery"),
+    n_with_cluster = sum(has_cluster),
+    .groups = "drop"
+  )
+
+pair_qc <- meta_all %>%
+  filter(!is.na(cluster)) %>%
+  distinct(patient_key, Timepoint) %>%
+  count(patient_key, name = "n_timepoints") %>%
+  summarise(
+    dataset = "NEO",
+    n_clustered_patients = n(),
+    n_complete_pairs = sum(n_timepoints == 2),
+    n_incomplete_pairs = sum(n_timepoints != 2),
+    .groups = "drop"
+  )
+
+knitr::kable(metadata_summary, caption = "NEO expression metadata matching summary")
+knitr::kable(pair_qc, caption = "NEO biopsy/surgery pair summary")
+
+if (nrow(unmatched_expr) > 0) {
+  warning(
+    nrow(unmatched_expr),
+    " NEO expression sample(s) do not have a cluster assignment and will be excluded: ",
+    paste(unmatched_expr$sample_id, collapse = ", "),
+    call. = FALSE
+  )
+}
+
+if (nrow(unmatched_cluster) > 0) {
+  warning(
+    nrow(unmatched_cluster),
+    " NEO cluster patient(s) are absent from expression: ",
+    paste(unmatched_cluster$patient_key, collapse = ", "),
+    call. = FALSE
+  )
+}
+
+meta_retained <- meta_all %>% filter(!is.na(cluster), !is.na(Timepoint))
+if (nrow(meta_retained) == 0) {
+  stop("No NEO expression samples matched cluster/timepoint metadata.", call. = FALSE)
+}
+
+expected_paired_patients <- meta_retained %>%
+  distinct(Patient_ID, cluster, Timepoint) %>%
+  group_by(Patient_ID, cluster) %>%
+  summarise(n_timepoints = n_distinct(Timepoint), .groups = "drop") %>%
+  filter(n_timepoints == 2) %>%
+  select(Patient_ID, cluster) %>%
+  apply_cluster_mapping() %>%
+  mutate(cluster = droplevels(cluster))
+
+keep_samples <- meta_retained$sample_id
+expr_retained <- expr_combined[, keep_samples, drop = FALSE]
+meta_retained <- meta_retained %>%
+  arrange(match(sample_id, colnames(expr_retained)))
+
+stopifnot(identical(meta_retained$sample_id, colnames(expr_retained)))
+
+meta_combined <- meta_retained
+expr_analysis <- expr_retained
+
+if (ncol(expr_analysis) == 0) stop("No retained NEO samples for immunedeconv.", call. = FALSE)
+stopifnot(identical(meta_combined$sample_id, colnames(expr_analysis)))
+
+cluster_display <- meta_combined %>%
+  distinct(Patient_ID, cluster) %>%
+  apply_cluster_mapping() %>%
+  count(cluster, name = "n_patients")
+
+cat("NEO immunedeconv analysis set:
+")
+cat("  Samples:", ncol(expr_analysis), "
+")
+cat("  Patients:", n_distinct(meta_combined$Patient_ID), "
+")
+print(cluster_display)
+```
+
+# Run immunedeconv
+
+The complete retained NEO TPM matrix is analyzed in a single `immunedeconv` run per method. CIM trajectory is used only for downstream patient-level comparisons and does not alter the deconvolution input.
+
+```{r immunedeconv-functions}
+make_indications <- function(mat, method) {
+  if (method %in% c("timer", "consensus_tme")) {
+    setNames(rep(tolower(TUMOR_INDICATION), ncol(mat)), colnames(mat))
+  } else {
+    NULL
+  }
+}
+
+deconv_to_long <- function(res, method) {
+  if (is.null(res)) return(NULL)
+
+  if (method == "estimate") {
+    long <- res %>%
+      as.data.frame() %>%
+      t() %>%
+      as.data.frame() %>%
+      rownames_to_column("sample_id")
+
+    long %>%
+      pivot_longer(-sample_id, names_to = "Cell_Type", values_to = "Value") %>%
+      mutate(Method = method, Value = as.numeric(Value))
+  } else {
+    if (!"cell_type" %in% colnames(res)) return(NULL)
+
+    res %>%
+      column_to_rownames("cell_type") %>%
+      t() %>%
+      as.data.frame() %>%
+      rownames_to_column("sample_id") %>%
+      pivot_longer(-sample_id, names_to = "Cell_Type", values_to = "Value") %>%
+      mutate(Method = method, Value = as.numeric(Value))
+  }
+}
+
+run_methods <- function(expr, meta, analysis_label = "NEO") {
+  out <- list()
+  log <- list()
+
+  for (m in METHODS_TO_RUN) {
+    message("Running ", analysis_label, " / ", m)
+    ind <- make_indications(expr, m)
+    convergence_warning <- FALSE
+
+    res <- withr::with_dir(DIRS$tmp, {
+      if (m == "estimate") {
+        tryCatch(immunedeconv::deconvolute_estimate(expr), error = function(e) { message("ERROR: ", e$message); NULL })
+      } else if (m == "epic") {
+        tryCatch(
+          withCallingHandlers(
+            immunedeconv::deconvolute(expr, m, tumor = TRUE, arrays = FALSE),
+            warning = function(w) {
+              if (grepl("didn't fully converge", w$message, ignore.case = TRUE)) {
+                convergence_warning <<- TRUE
+                message("EPIC partial convergence warning detected.")
+              }
+              invokeRestart("muffleWarning")
+            }
+          ),
+          error = function(e) { message("ERROR: ", e$message); NULL }
+        )
+      } else if (m == "quantiseq") {
+        tryCatch(immunedeconv::deconvolute(expr, m, tumor = TRUE, arrays = FALSE), error = function(e) { message("ERROR: ", e$message); NULL })
+      } else if (!is.null(ind)) {
+        tryCatch(immunedeconv::deconvolute(expr, m, indications = ind, arrays = FALSE), error = function(e) { message("ERROR: ", e$message); NULL })
+      } else {
+        tryCatch(immunedeconv::deconvolute(expr, m, arrays = FALSE), error = function(e) { message("ERROR: ", e$message); NULL })
+      }
+    })
+
+    if (m == "epic" && !is.null(res) && "cell_type" %in% colnames(res)) {
+      n_samples_returned <- ncol(res) - 1
+      rate <- n_samples_returned / ncol(expr)
+      if (rate < 0.30) {
+        message("Discarding EPIC output because <30% of samples converged.")
+        res <- NULL
+      }
+    }
+
+    long <- deconv_to_long(res, m)
+
+    if (!is.null(long)) {
+      # immunedeconv should preserve input sample names. Check this explicitly
+      # before downstream aggregation so altered IDs cannot silently create NAs.
+      unexpected_ids <- setdiff(unique(long$sample_id), meta$sample_id)
+      if (length(unexpected_ids) > 0) {
+        warning(
+          analysis_label, " / ", m,
+          ": result sample IDs not found in metadata: ",
+          paste(head(unexpected_ids, 20), collapse = ", "),
+          call. = FALSE
+        )
+      }
+
+      long <- long %>%
+        left_join(
+          meta %>% select(sample_id, dataset, Patient_ID, patient_key, Timepoint, cluster),
+          by = "sample_id"
+        )
+
+      n_missing_meta <- sum(is.na(long$Patient_ID) | is.na(long$Timepoint) | is.na(long$cluster))
+      if (n_missing_meta > 0) {
+        warning(
+          analysis_label, " / ", m, ": ", n_missing_meta,
+          " result row(s) lack metadata and will be removed downstream.",
+          call. = FALSE
+        )
+      }
+    }
+
+    out[[m]] <- long
+    log[[m]] <- tibble(
+      dataset = analysis_label,
+      Method = m,
+      status = ifelse(is.null(long), "FAILED", "OK"),
+      n_samples = ifelse(is.null(long), 0, n_distinct(long$sample_id)),
+      n_celltypes = ifelse(is.null(long), 0, n_distinct(long$Cell_Type)),
+      notes = case_when(
+        is.null(long) ~ "Method failed or returned no usable result",
+        m == "epic" & convergence_warning ~ "Partial convergence",
+        TRUE ~ "Success"
+      )
+    )
+  }
+
+  list(immune_long = bind_rows(out), run_log = bind_rows(log))
+}
+```
+
+```{r run-immunedeconv}
+
+if (params$run_immunedeconv) {
+  res_combined <- run_methods(expr_analysis, meta_combined, "NEO")
+  immune_long_raw <- res_combined$immune_long
+  run_summary <- res_combined$run_log
+} else {
+  immune_long_raw <- tibble()
+  run_summary <- tibble()
+}
+```
+
+# Import combined CIBERSORTx results
+
+The NEO CIBERSORTx file is treated as one external deconvolution result for the same NEO patient/timepoint set. The non-cellular CIBERSORTx columns `P-value`, `Correlation`, and `RMSE` are removed before conversion to long format.
+
+```{r cibersortx-import}
+
+build_cibersortx_metadata <- function(sample_ids) {
+  cleaned <- clean_neo_sample_id(sample_ids)
+
+  meta <- tibble(
+    sample_id = as.character(sample_ids),
+    sample_id_clean = cleaned
+  ) %>%
+    mutate(
+      Timepoint = factor(get_timepoint(sample_id_clean), levels = c("Biopsy", "Surgery")),
+      Patient_ID = get_patient_id_from_sample(sample_id_clean),
+      patient_key = get_patient_key_from_cibersortx(sample_id_clean),
+      dataset = "NEO"
+    ) %>%
+    left_join(clusters %>% select(patient_key, cluster), by = "patient_key") %>%
+    mutate(cluster = factor(cluster, levels = levels(clusters$cluster)))
+
+  bad_tp <- meta %>% filter(is.na(Timepoint))
+  if (nrow(bad_tp) > 0) {
+    stop(
+      "Unrecognized NEO CIBERSORTx timepoint ID(s): ",
+      paste(bad_tp$sample_id, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  # Multiple CIBERSORTx rows are permitted only when they are explicit _RepN
+  # technical replicates of the same cleaned sample base.
+  collision <- meta %>%
+    mutate(raw_base = str_remove(sample_id_clean, "_Rep\\d+$")) %>%
+    group_by(Patient_ID, Timepoint) %>%
+    summarise(
+      n_rows = n(),
+      n_raw_bases = n_distinct(raw_base),
+      raw_ids = paste(sample_id, collapse = ";"),
+      .groups = "drop"
+    ) %>%
+    filter(n_rows > 1, n_raw_bases > 1)
+
+  if (nrow(collision) > 0) {
+    stop(
+      "Distinct NEO CIBERSORTx sample IDs collapse to the same patient/timepoint: ",
+      paste(head(paste0(collision$Patient_ID, "/", collision$Timepoint, "=", collision$raw_ids), 10), collapse = " | "),
+      call. = FALSE
+    )
+  }
+
+  meta
+}
+
+read_cibersort_noqc_long <- function(path, expression_sample_ids = NULL) {
+  if (!file.exists(path)) {
+    warning("NEO CIBERSORTx file not found: ", path, call. = FALSE)
+    return(NULL)
+  }
+
+  cs <- data.table::fread(path, data.table = FALSE, check.names = FALSE)
+  if (!"Mixture" %in% names(cs)) {
+    stop("NEO CIBERSORTx file must contain a 'Mixture' column.", call. = FALSE)
+  }
+
+  cs$Mixture <- trimws(as.character(cs$Mixture))
+  if (anyDuplicated(cs$Mixture)) {
+    dup <- unique(cs$Mixture[duplicated(cs$Mixture)])
+    stop("Duplicate raw CIBERSORTx Mixture IDs: ", paste(dup, collapse = ", "), call. = FALSE)
+  }
+
+  # Model-quality columns are not immune-cell estimates.
+  qc_cols <- c(
+    "P-value", "P.value", "P value",
+    "Correlation", "RMSE",
+    "Absolute score", "Absolute.Score"
+  )
+  qc_present <- intersect(qc_cols, names(cs))
+  if (length(qc_present) > 0) {
+    message("Removing CIBERSORTx QC column(s): ", paste(qc_present, collapse = ", "))
+    cs <- cs %>% select(-all_of(qc_present))
+  }
+
+  value_cols <- setdiff(names(cs), "Mixture")
+  if (length(value_cols) == 0) {
+    stop("No CIBERSORTx immune-cell columns remain after QC removal.", call. = FALSE)
+  }
+
+  bad_value_cols <- value_cols[vapply(value_cols, function(nm) {
+    x <- cs[[nm]]
+    y <- suppressWarnings(as.numeric(x))
+    any(is.na(y) & !is.na(x) & trimws(as.character(x)) != "")
+  }, logical(1))]
+  if (length(bad_value_cols) > 0) {
+    stop(
+      "Non-numeric NEO CIBERSORTx immune-cell column(s): ",
+      paste(bad_value_cols, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  meta <- build_cibersortx_metadata(cs$Mixture)
+
+  unmatched <- meta %>% filter(is.na(cluster))
+  if (nrow(unmatched) > 0) {
+    warning(
+      nrow(unmatched),
+      " CIBERSORTx sample(s) do not match NEO cluster assignments and will be excluded: ",
+      paste(unmatched$sample_id, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  # Compare canonical patient/timepoint sample sets, not raw source strings.
+  if (!is.null(expression_sample_ids)) {
+    canonical_expr <- canonical_neo_sample_id(expression_sample_ids)
+    canonical_cs <- ifelse(
+      meta$Timepoint == "Biopsy",
+      paste0(meta$patient_key, "_B"),
+      paste0(meta$patient_key, "_S")
+    )
+
+    missing_from_ciber <- setdiff(canonical_expr, canonical_cs)
+    extra_in_ciber <- setdiff(canonical_cs, canonical_expr)
+
+    if (length(missing_from_ciber) > 0 || length(extra_in_ciber) > 0) {
+      warning(
+        "NEO CIBERSORTx/TPM sample-set mismatch. Missing from CIBERSORTx: ",
+        ifelse(length(missing_from_ciber), paste(missing_from_ciber, collapse = ", "), "none"),
+        "; extra in CIBERSORTx: ",
+        ifelse(length(extra_in_ciber), paste(extra_in_ciber, collapse = ", "), "none"),
+        call. = FALSE
+      )
+    }
+  }
+
+  cs_long <- cs %>%
+    rename(sample_id = Mixture) %>%
+    pivot_longer(
+      cols = all_of(value_cols),
+      names_to = "Cell_Type",
+      values_to = "Value"
+    ) %>%
+    mutate(Method = "CIBERSORTx", Value = as.numeric(Value)) %>%
+    left_join(
+      meta %>%
+        select(sample_id, dataset, Patient_ID, patient_key, Timepoint, cluster),
+      by = "sample_id"
+    ) %>%
+    filter(!is.na(cluster), !is.na(Timepoint), is.finite(Value))
+
+  cs_long
+}
+
+if (params$run_cibersortx_import) {
+  ciber_combined_long <- read_cibersort_noqc_long(
+    FILES$cibersortx,
+    expression_sample_ids = colnames(expr_analysis)
+  )
+
+  if (!is.null(ciber_combined_long)) {
+    immune_long_raw <- bind_rows(immune_long_raw, ciber_combined_long)
+    run_summary <- bind_rows(
+      run_summary,
+      tibble(
+        dataset = "NEO",
+        Method = "CIBERSORTx",
+        status = "OK",
+        n_samples = n_distinct(ciber_combined_long$sample_id),
+        n_celltypes = n_distinct(ciber_combined_long$Cell_Type),
+        notes = "Imported from NEO CIBERSORTx relative-mode file; QC columns removed before reshaping"
+      )
+    )
+  }
+}
+
+if (nrow(immune_long_raw) == 0 ||
+    !all(c("Method", "Cell_Type", "Value") %in% names(immune_long_raw))) {
+  stop(
+    "No usable NEO immune-deconvolution results are available. ",
+    "Check run_immunedeconv/run_cibersortx_import and the run summary.",
+    call. = FALSE
+  )
+}
+
+knitr::kable(run_summary, caption = "NEO method run summary")
+```
+
+# Patient-level aggregation
+
+Technical replicates are averaged to create one value per patient, method, cell type, timepoint, and cluster.
+
+```{r patient-aggregation}
+# Clean long-format immune deconvolution results
+immune_long_clean <- immune_long_raw %>%
+  dplyr::filter(
+    !is.na(Patient_ID),
+    !is.na(Timepoint),
+    !is.na(cluster),
+    is.finite(Value)
+  )
+
+# Apply biological CIM-state labels before patient-level aggregation.
+# Biological NEO mapping is defined by the YAML/config CLUSTER_MAPPING.
+immune_long_clean <- apply_cluster_mapping(immune_long_clean)
+
+# Average technical replicates at the patient level
+immune_patient <- immune_long_clean %>%
+  dplyr::group_by(Method, Cell_Type, Patient_ID, Timepoint, cluster) %>%
+  dplyr::summarise(
+    dataset = dplyr::first(dataset),
+    Value = mean(Value, na.rm = TRUE),
+    n_replicates = dplyr::n(),
+    .groups = "drop"
+  )
+
+# Compact pipeline: original patient-level object retained in memory only.
+
+# Store method-specific lower y-axis limits for plotting
+method_ymin_original <- immune_patient %>%
+  dplyr::group_by(Method) %>%
+  dplyr::summarise(
+    ymin = ifelse(
+      min(Value, na.rm = TRUE) < 0,
+      min(Value, na.rm = TRUE),
+      0
+    ),
+    .groups = "drop"
+  )
+
+# Quick summary
+immune_patient_summary <- immune_patient %>%
+  dplyr::count(Method, cluster, Timepoint, name = "n_patient_level_values")
+
+knitr::kable(
+  immune_patient_summary,
+  caption = "Patient-level immune deconvolution values after cluster mapping"
+)
+```
+
+# T-cell aggregation
+
+Different deconvolution algorithms report T-cell populations at different levels of granularity. This section optionally creates broader CD4+ and CD8+ categories to simplify downstream interpretation.
+
+Aggregation is performed after patient-level averaging and before statistical analysis.
+
+## xCell aggregation
+
+When `AGGREGATE_XCELL_TCELLS = TRUE`, all xCell populations matching `T cell CD4+` are summed into `T cell CD4+ (aggregated)`, and all xCell populations matching `T cell CD8+` are summed into `T cell CD8+ (aggregated)`.
+
+## CIBERSORTx aggregation
+
+CIBERSORTx supports two strategies:
+
+- `refined`: creates `T cells CD4+ (general)` from naive, memory resting, and memory activated CD4 T cells. Follicular helper T cells are kept separate. This is recommended when you want to preserve a distinct Tfh population.
+- `simple`: creates `T cells CD4+ (total)` from naive, memory resting, memory activated, and follicular helper T cells. This is useful for broad CD4 versus CD8 summaries.
+
+```{r tcell-aggregation}
+aggregate_xcell_tcells <- function(immune_patient_df) {
+  if (!AGGREGATE_XCELL_TCELLS) return(list(immune_patient_aggregated = immune_patient_df, aggregation_details = NULL))
+
+  xcell_data <- immune_patient_df %>% filter(Method == "xcell")
+  non_xcell <- immune_patient_df %>% filter(Method != "xcell")
+  if (nrow(xcell_data) == 0) return(list(immune_patient_aggregated = immune_patient_df, aggregation_details = NULL))
+
+  cd4_aggregated <- xcell_data %>%
+    filter(grepl("T cell CD4\\+", Cell_Type)) %>%
+    group_by(Method, Patient_ID, Timepoint, cluster) %>%
+    summarise(
+      dataset = dplyr::first(dataset),
+      Value = sum(Value, na.rm = TRUE),
+      n_subtypes = n(),
+      original_subtypes = paste(sort(unique(Cell_Type)), collapse = " + "),
+      .groups = "drop"
+    ) %>%
+    mutate(Cell_Type = "T cell CD4+ (aggregated)")
+
+  cd8_aggregated <- xcell_data %>%
+    filter(grepl("T cell CD8\\+", Cell_Type)) %>%
+    group_by(Method, Patient_ID, Timepoint, cluster) %>%
+    summarise(
+      dataset = dplyr::first(dataset),
+      Value = sum(Value, na.rm = TRUE),
+      n_subtypes = n(),
+      original_subtypes = paste(sort(unique(Cell_Type)), collapse = " + "),
+      .groups = "drop"
+    ) %>%
+    mutate(Cell_Type = "T cell CD8+ (aggregated)")
+
+  other_xcell <- xcell_data %>% filter(!grepl("T cell CD4\\+", Cell_Type), !grepl("T cell CD8\\+", Cell_Type))
+
+  immune_patient_aggregated <- bind_rows(
+    non_xcell,
+    other_xcell,
+    cd4_aggregated %>% select(dataset, Method, Cell_Type, Patient_ID, Timepoint, cluster, Value),
+    cd8_aggregated %>% select(dataset, Method, Cell_Type, Patient_ID, Timepoint, cluster, Value)
+  )
+
+  aggregation_details <- bind_rows(
+    cd4_aggregated %>% select(dataset, Patient_ID, Timepoint, cluster, Cell_Type, n_subtypes, original_subtypes),
+    cd8_aggregated %>% select(dataset, Patient_ID, Timepoint, cluster, Cell_Type, n_subtypes, original_subtypes)
+  )
+
+  list(immune_patient_aggregated = immune_patient_aggregated, aggregation_details = aggregation_details)
+}
+
+aggregate_cibersort_tcells <- function(df, strategy = "refined") {
+  if (!AGGREGATE_CIBERSORT_TCELLS) return(list(aggregated = df, details = NULL))
+  if (nrow(df) == 0) return(list(aggregated = df, details = NULL))
+
+  if (strategy == "refined") {
+    cd4_subtypes <- c("T cells CD4 naive", "T cells CD4 memory resting", "T cells CD4 memory activated")
+    cd4_name <- "T cells CD4+ (general)"
+    cd8_subtypes <- c("T cells CD8")
+    cd8_name <- "T cells CD8+ (total)"
+  } else if (strategy == "simple") {
+    cd4_subtypes <- c("T cells CD4 naive", "T cells CD4 memory resting", "T cells CD4 memory activated", "T cells follicular helper")
+    cd4_name <- "T cells CD4+ (total)"
+    cd8_subtypes <- c("T cells CD8")
+    cd8_name <- "T cells CD8+ (total)"
+  } else {
+    stop("CIBERSORT_AGGREGATION_STRATEGY must be 'refined' or 'simple'.")
+  }
+
+  cd4_agg <- df %>%
+    filter(Cell_Type %in% cd4_subtypes) %>%
+    group_by(Method, Patient_ID, Timepoint, cluster) %>%
+    summarise(
+      dataset = dplyr::first(dataset),
+      Value = sum(Value, na.rm = TRUE),
+      n_subtypes = n(),
+      original_subtypes = paste(sort(unique(Cell_Type)), collapse = " + "),
+      .groups = "drop"
+    ) %>%
+    mutate(Cell_Type = cd4_name)
+
+  cd8_agg <- df %>%
+    filter(Cell_Type %in% cd8_subtypes) %>%
+    group_by(Method, Patient_ID, Timepoint, cluster) %>%
+    summarise(
+      dataset = dplyr::first(dataset),
+      Value = sum(Value, na.rm = TRUE),
+      n_subtypes = n(),
+      original_subtypes = paste(sort(unique(Cell_Type)), collapse = " + "),
+      .groups = "drop"
+    ) %>%
+    mutate(Cell_Type = cd8_name)
+
+  aggregated_subtypes <- c(cd4_subtypes, cd8_subtypes)
+  other_cells <- df %>% filter(!Cell_Type %in% aggregated_subtypes)
+
+  aggregated <- bind_rows(
+    other_cells,
+    cd4_agg %>% select(dataset, Method, Cell_Type, Patient_ID, Timepoint, cluster, Value),
+    cd8_agg %>% select(dataset, Method, Cell_Type, Patient_ID, Timepoint, cluster, Value)
+  )
+
+  details <- bind_rows(
+    cd4_agg %>% select(dataset, Patient_ID, Timepoint, cluster, Cell_Type, n_subtypes, original_subtypes),
+    cd8_agg %>% select(dataset, Patient_ID, Timepoint, cluster, Cell_Type, n_subtypes, original_subtypes)
+  )
+
+  list(aggregated = aggregated, details = details)
+}
+
+xcell_agg <- aggregate_xcell_tcells(immune_patient)
+immune_after_xcell <- xcell_agg$immune_patient_aggregated
+
+if (!is.null(xcell_agg$aggregation_details)) {
+  write.csv(xcell_agg$aggregation_details, file.path(DIRS$tables, "xcell_tcell_aggregation_details.csv"), row.names = FALSE)
+}
+
+ciber_df <- immune_after_xcell %>% filter(Method == "CIBERSORTx")
+non_ciber <- immune_after_xcell %>% filter(Method != "CIBERSORTx")
+ciber_agg <- aggregate_cibersort_tcells(ciber_df, CIBERSORT_AGGREGATION_STRATEGY)
+
+immune_patient_aggregated <- bind_rows(non_ciber, ciber_agg$aggregated)
+immune_patient_aggregated <- apply_cluster_mapping(immune_patient_aggregated)
+
+if (!is.null(ciber_agg$details)) {
+  write.csv(ciber_agg$details, file.path(DIRS$tables, "cibersort_tcell_aggregation_details.csv"), row.names = FALSE)
+}
+
+# Compact pipeline: aggregated patient-level object retained in memory only.
+# compact output: omitted immune_patient_level_AGGREGATED.csv
+
+method_ymin_aggregated <- immune_patient_aggregated %>%
+  group_by(Method) %>%
+  summarise(ymin = if (min(Value, na.rm = TRUE) < 0) min(Value, na.rm = TRUE) else 0, .groups = "drop")
+```
+
+# Patient-level integrity checks ------------------------------------------------
+assert_unique_patient_values <- function(df, context = "patient-level table") {
+  required <- c("Method", "Cell_Type", "Patient_ID", "Timepoint", "cluster", "Value")
+  missing <- base::setdiff(required, names(df))
+  if (length(missing) > 0) {
+    stop(context, " is missing required columns: ", paste(missing, collapse = ", "), call. = FALSE)
+  }
+
+  dup <- df %>%
+    dplyr::filter(!is.na(Patient_ID), !is.na(Timepoint), !is.na(cluster)) %>%
+    dplyr::count(Method, Cell_Type, Patient_ID, Timepoint, cluster, name = "n_rows") %>%
+    dplyr::filter(n_rows > 1)
+
+  if (nrow(dup) > 0) {
+    stop(
+      context, " contains duplicate patient-level values. ",
+      "Technical replicates must be resolved before statistics/plots. Examples: ",
+      paste(utils::head(paste0(dup$Method, "/", dup$Cell_Type, "/", dup$Patient_ID, "/", dup$Timepoint), 10), collapse = " | "),
+      call. = FALSE
+    )
+  }
+
+  invisible(TRUE)
+}
+
+assert_unique_patient_values(immune_patient, "ORIGINAL immune patient table")
+assert_unique_patient_values(immune_patient_aggregated, "AGGREGATED immune patient table")
+
+# Unpaired statistics
+
+For each method, cell type, and timepoint, the pipeline compares immune estimates across CIMIC clusters.
+
+- If `k = 2`, the global test is Wilcoxon rank-sum.
+- If `k >= 3`, the global test is Kruskal-Wallis, followed by Dunn post hoc testing with Benjamini-Hochberg FDR correction.
+
+```{r unpaired-stats}
+summarise_by_cluster <- function(df) {
+  df %>%
+    group_by(cluster) %>%
+    summarise(n = n(), mean = mean(Value, na.rm = TRUE), sd = sd(Value, na.rm = TRUE), .groups = "drop") %>%
+    mutate(cluster = as.character(cluster))
+}
+
+empty_skip_tbl <- function() {
+  tibble(analysis = character(), Method = character(), Cell_Type = character(), Timepoint = character(), reason = character(), k = integer(), n_total = integer(), n_unique_value = integer(), min_cluster_n = integer())
+}
+
+make_skip_row <- function(Method, Cell_Type, Timepoint, analysis, reason, k = NA_integer_, n_total = NA_integer_, n_unique_value = NA_integer_, min_cluster_n = NA_integer_) {
+  tibble(analysis = analysis, Method = as.character(Method), Cell_Type = as.character(Cell_Type), Timepoint = as.character(Timepoint), reason = reason, k = as.integer(k), n_total = as.integer(n_total), n_unique_value = as.integer(n_unique_value), min_cluster_n = as.integer(min_cluster_n))
+}
+
+unpaired_global_one <- function(df, Method, Cell_Type, Timepoint) {
+  df <- df %>%
+    dplyr::filter(is.finite(Value), !is.na(cluster), !is.na(Patient_ID))
+
+  # Statistics are strictly patient-level: one value per patient for the
+  # current Method x Cell_Type x Timepoint.
+  dup <- df %>%
+    dplyr::count(Patient_ID, name = "n_rows") %>%
+    dplyr::filter(n_rows > 1)
+  if (nrow(dup) > 0) {
+    stop(
+      "Duplicate patients reached unpaired statistics for ",
+      Method, " / ", Cell_Type, " / ", as.character(Timepoint),
+      ": ", paste(dup$Patient_ID, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  kk <- dplyr::n_distinct(df$cluster)
+  n_total <- nrow(df)
+  n_unique <- dplyr::n_distinct(df$Value)
+  group_sizes <- table(df$cluster)
+  min_n <- if (kk > 0) min(as.integer(group_sizes)) else NA_integer_
+
+  if (kk < 2) {
+    return(list(out = NULL, skip = make_skip_row(Method, Cell_Type, Timepoint, "unpaired_global", "k<2", kk, n_total, n_unique, min_n)))
+  }
+
+  summ <- summarise_by_cluster(df)
+
+  if (!is.na(min_n) && min_n < MIN_UNPAIRED_GROUP_N) {
+    return(list(
+      out = tibble(
+        Method = as.character(Method), Cell_Type = as.character(Cell_Type),
+        Timepoint = as.character(Timepoint), test = ifelse(kk == 2, "wilcox_rank_sum", "kruskal"),
+        p_value = NA_real_, n_clusters = kk, note = paste0("skipped_min_group_n<", MIN_UNPAIRED_GROUP_N),
+        summary = list(summ)
+      ),
+      skip = make_skip_row(Method, Cell_Type, Timepoint, "unpaired_global", "group_too_small", kk, n_total, n_unique, min_n)
+    ))
+  }
+
+  if (n_unique < 2) {
+    return(list(
+      out = tibble(
+        Method = as.character(Method), Cell_Type = as.character(Cell_Type),
+        Timepoint = as.character(Timepoint), test = ifelse(kk == 2, "wilcox_rank_sum", "kruskal"),
+        p_value = NA_real_, n_clusters = kk, note = "skipped_no_variation", summary = list(summ)
+      ),
+      skip = make_skip_row(Method, Cell_Type, Timepoint, "unpaired_global", "no_variation", kk, n_total, n_unique, min_n)
+    ))
+  }
+
+  p <- if (kk == 2) {
+    # Two independent CIM groups -> two-sided Wilcoxon rank-sum test.
+    # exact = FALSE is intentional because deconvolution outputs commonly
+    # contain ties/zeros; R's exact calculation is not valid with ties.
+    # IMPORTANT: do not pass paired=FALSE to the formula interface.
+    # stats::wilcox.test.formula() does not accept a paired argument and can
+    # therefore return an error/NA when wrapped in tryCatch. With two CIM
+    # groups, the formula interface is intrinsically an independent-samples
+    # Wilcoxon rank-sum test.
+    tryCatch(
+      stats::wilcox.test(
+        Value ~ cluster,
+        data = df,
+        alternative = "two.sided",
+        exact = FALSE,
+        correct = TRUE
+      )$p.value,
+      error = function(e) {
+        warning(
+          "Unpaired Wilcoxon failed for ", Method, " / ", Cell_Type, " / ",
+          as.character(Timepoint), ": ", conditionMessage(e)
+        )
+        NA_real_
+      }
+    )
+  } else {
+    tryCatch(
+      stats::kruskal.test(Value ~ cluster, data = df)$p.value,
+      error = function(e) NA_real_
+    )
+  }
+
+  list(
+    out = tibble(
+      Method = as.character(Method),
+      Cell_Type = as.character(Cell_Type),
+      Timepoint = as.character(Timepoint),
+      test = ifelse(kk == 2, "wilcox_rank_sum", "kruskal"),
+      p_value = p,
+      n_clusters = kk,
+      note = NA_character_,
+      summary = list(summ)
+    ),
+    skip = NULL
+  )
+}
+
+unpaired_dunn_one <- function(df, Method, Cell_Type, Timepoint, drop_small_groups_n = 2) {
+  df2 <- df %>%
+    filter(is.finite(Value), !is.na(cluster)) %>%
+    group_by(cluster) %>%
+    filter(n() >= drop_small_groups_n) %>%
+    ungroup()
+
+  kk <- n_distinct(df2$cluster)
+  n_total <- nrow(df2)
+  n_unique <- n_distinct(df2$Value)
+  min_n <- if (kk > 0) min(as.integer(table(df2$cluster))) else NA_integer_
+
+  if (kk < 3) return(list(out = NULL, skip = make_skip_row(Method, Cell_Type, Timepoint, "unpaired_dunn", "k<3_after_filter", kk, n_total, n_unique, min_n)))
+  if (n_unique < 2) return(list(out = NULL, skip = make_skip_row(Method, Cell_Type, Timepoint, "unpaired_dunn", "no_variation", kk, n_total, n_unique, min_n)))
+
+  cl_summ <- summarise_by_cluster(df2) %>% rename(n_group = n, mean_group = mean, sd_group = sd)
+  dt <- tryCatch(suppressWarnings(FSA::dunnTest(Value ~ cluster, data = df2, method = "bh")$res), error = function(e) NULL)
+
+  if (is.null(dt)) return(list(out = NULL, skip = make_skip_row(Method, Cell_Type, Timepoint, "unpaired_dunn", "dunn_error", kk, n_total, n_unique, min_n)))
+
+  out <- as_tibble(dt) %>%
+    rename(comparison = Comparison, z = Z, p_unadj = P.unadj, fdr = P.adj) %>%
+    mutate(
+      Method = as.character(Method),
+      Cell_Type = as.character(Cell_Type),
+      Timepoint = as.character(Timepoint),
+      cluster1 = sub(" -.*$", "", comparison),
+      cluster2 = sub("^.*- ", "", comparison),
+      z = as.numeric(z)
+    ) %>%
+    left_join(cl_summ %>% rename(cluster1 = cluster, n1 = n_group, mean1 = mean_group, sd1 = sd_group), by = "cluster1") %>%
+    left_join(cl_summ %>% rename(cluster2 = cluster, n2 = n_group, mean2 = mean_group, sd2 = sd_group), by = "cluster2") %>%
+    relocate(Method, Cell_Type, Timepoint, comparison, cluster1, cluster2, n1, mean1, sd1, n2, mean2, sd2, z, p_unadj, fdr)
+
+  list(out = out, skip = NULL)
+}
+
+compute_unpaired_all <- function(immune_patient_df, out_prefix, drop_small_groups_n = 2, write_outputs = FALSE) {
+  # Safety step: all unpaired statistics use mapped CIM groups.
+  # Numeric NEO clusters are mapped first; unpaired analyses compare Fun-CIM versus Dys-CIM at each timepoint.
+  immune_patient_df <- apply_cluster_mapping(immune_patient_df) %>%
+    dplyr::filter(!is.na(cluster)) %>%
+    dplyr::mutate(cluster = droplevels(cluster))
+
+  keys <- immune_patient_df %>% dplyr::distinct(Method, Cell_Type, Timepoint) %>% dplyr::arrange(Timepoint, Method, Cell_Type)
+
+  global_rows <- list()
+  dunn_rows <- list()
+  skip_rows <- list()
+
+  for (i in seq_len(nrow(keys))) {
+    key <- keys[i, ]
+    method_i <- key$Method[[1]]
+    cell_type_i <- key$Cell_Type[[1]]
+    timepoint_i <- key$Timepoint[[1]]
+
+    df_sub <- immune_patient_df %>%
+      dplyr::filter(
+        .data$Method == .env$method_i,
+        .data$Cell_Type == .env$cell_type_i,
+        .data$Timepoint == .env$timepoint_i,
+        is.finite(.data$Value),
+        !is.na(.data$Patient_ID),
+        !is.na(.data$cluster)
+      )
+
+    g <- unpaired_global_one(df_sub, method_i, cell_type_i, timepoint_i)
+    if (!is.null(g$out)) global_rows[[length(global_rows) + 1]] <- g$out
+    if (!is.null(g$skip)) skip_rows[[length(skip_rows) + 1]] <- g$skip
+
+    d <- unpaired_dunn_one(df_sub, method_i, cell_type_i, timepoint_i, drop_small_groups_n)
+    if (!is.null(d$out)) dunn_rows[[length(dunn_rows) + 1]] <- d$out
+    if (!is.null(d$skip)) skip_rows[[length(skip_rows) + 1]] <- d$skip
+  }
+
+  global_tbl <- if (length(global_rows)) bind_rows(global_rows) else tibble()
+  dunn_tbl <- if (length(dunn_rows)) bind_rows(dunn_rows) else tibble()
+  skipped <- if (length(skip_rows)) bind_rows(skip_rows) else empty_skip_tbl()
+
+  global_tbl <- global_tbl %>% mutate(FDR = p.adjust(p_value, method = "BH"))
+
+  global_wide <- global_tbl %>%
+    tidyr::unnest(summary) %>%
+    pivot_wider(
+      id_cols = c(Method, Cell_Type, Timepoint, test, p_value, FDR, n_clusters, note),
+      names_from = cluster,
+      values_from = c(n, mean, sd),
+      names_glue = "{cluster}_{.value}"
+    ) %>%
+    arrange(Timepoint, Method, Cell_Type)
+
+  if (isTRUE(write_outputs)) {
+    write.csv(global_wide, file.path(DIRS$tables, paste0(out_prefix, "_unpaired_global.csv")), row.names = FALSE)
+    write.csv(dunn_tbl, file.path(DIRS$tables, paste0(out_prefix, "_unpaired_dunn.csv")), row.names = FALSE)
+  }
+
+  list(global = global_wide, dunn = dunn_tbl, skipped = skipped)
+}
+
+unpaired_original <- compute_unpaired_all(immune_patient, "ORIGINAL", drop_small_groups_n = 2, write_outputs = FALSE)
+unpaired_aggregated <- compute_unpaired_all(immune_patient_aggregated, "AGGREGATED", drop_small_groups_n = 2, write_outputs = TRUE)
+```
+
+# Paired statistics
+
+Within each CIMIC cluster, the pipeline performs paired Wilcoxon signed-rank tests comparing surgery versus biopsy for each method and cell type.
+
+```{r paired-stats}
+make_skip_row_paired <- function(Method, Cell_Type, cluster, reason, n_pairs = NA_integer_, n_unique_delta = NA_integer_) {
+  tibble(analysis = "paired", Method = Method, Cell_Type = Cell_Type, cluster = as.character(cluster), reason = reason, n_pairs = n_pairs, n_unique_delta = n_unique_delta)
+}
+
+paired_one <- function(df, Method, Cell_Type, cluster_label, expected_pairs_df) {
+  expected_cluster <- expected_pairs_df %>%
+    dplyr::filter(as.character(cluster) == as.character(cluster_label)) %>%
+    dplyr::distinct(Patient_ID)
+
+  df <- df %>%
+    dplyr::filter(!is.na(Patient_ID), !is.na(Timepoint), !is.na(cluster))
+
+  # At this stage technical replicates should already have been collapsed.
+  dup <- df %>%
+    dplyr::count(Patient_ID, Timepoint, name = "n_rows") %>%
+    dplyr::filter(n_rows > 1)
+  if (nrow(dup) > 0) {
+    stop(
+      "Duplicate patient/timepoint rows reached paired statistics for ",
+      Method, " / ", Cell_Type, " / ", as.character(cluster_label),
+      ": ", paste0(dup$Patient_ID, "(", dup$Timepoint, ")", collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  observed_availability <- df %>%
+    dplyr::mutate(
+      Timepoint_chr = as.character(Timepoint),
+      valid_value = is.finite(Value)
+    ) %>%
+    dplyr::group_by(Patient_ID) %>%
+    dplyr::summarise(
+      has_valid_biopsy = any(Timepoint_chr == "Biopsy" & valid_value, na.rm = TRUE),
+      has_valid_surgery = any(Timepoint_chr == "Surgery" & valid_value, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  pair_audit <- expected_cluster %>%
+    dplyr::left_join(observed_availability, by = "Patient_ID") %>%
+    dplyr::mutate(
+      has_valid_biopsy = tidyr::replace_na(has_valid_biopsy, FALSE),
+      has_valid_surgery = tidyr::replace_na(has_valid_surgery, FALSE),
+      included_pair = has_valid_biopsy & has_valid_surgery,
+      exclusion_reason = dplyr::case_when(
+        included_pair ~ NA_character_,
+        !has_valid_biopsy & !has_valid_surgery ~ "missing_or_nonfinite_both_timepoints",
+        !has_valid_biopsy ~ "missing_or_nonfinite_biopsy",
+        !has_valid_surgery ~ "missing_or_nonfinite_surgery",
+        TRUE ~ "incomplete_pair"
+      ),
+      Method = as.character(Method),
+      Cell_Type = as.character(Cell_Type),
+      cluster = as.character(cluster_label)
+    )
+
+  wide <- df %>%
+    dplyr::filter(is.finite(Value)) %>%
+    dplyr::select(Patient_ID, Timepoint, Value) %>%
+    tidyr::pivot_wider(names_from = Timepoint, values_from = Value) %>%
+    dplyr::filter(is.finite(Biopsy), is.finite(Surgery))
+
+  unexpected_wide <- wide %>%
+    dplyr::anti_join(expected_cluster, by = "Patient_ID")
+  if (nrow(unexpected_wide) > 0) {
+    stop(
+      "Unexpected patient(s) entered paired analysis for ",
+      Method, " / ", Cell_Type, " / ", as.character(cluster_label),
+      ": ", paste(unexpected_wide$Patient_ID, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  n_candidates <- nrow(pair_audit)
+  n_pairs_actual <- sum(pair_audit$included_pair)
+  n_dropped <- n_candidates - n_pairs_actual
+
+  if (nrow(wide) != n_pairs_actual) {
+    stop(
+      "Paired-count consistency check failed for ", Method, " / ", Cell_Type,
+      " / ", as.character(cluster_label), ": wide table has ", nrow(wide),
+      " complete pairs but audit counted ", n_pairs_actual, ".",
+      call. = FALSE
+    )
+  }
+
+  if (nrow(wide) == 0) {
+    return(list(
+      stats = NULL,
+      wide = NULL,
+      skip = make_skip_row_paired(Method, Cell_Type, cluster_label, "no_complete_pairs", 0),
+      pair_audit = pair_audit
+    ))
+  }
+
+  wide <- wide %>%
+    dplyr::mutate(
+      Delta = Surgery - Biopsy,
+      nonzero_delta = Delta != 0
+    )
+
+  n_pairs <- nrow(wide)
+  n_zero_delta <- sum(!wide$nonzero_delta)
+  n_nonzero_delta <- sum(wide$nonzero_delta)
+  n_unique_delta <- dplyr::n_distinct(wide$Delta)
+
+  stats_base <- tibble(
+    Method = as.character(Method),
+    Cell_Type = as.character(Cell_Type),
+    cluster = as.character(cluster_label),
+    n_candidates = n_candidates,
+    n_pairs = n_pairs,
+    n_dropped = n_dropped,
+    n_zero_delta = n_zero_delta,
+    n_nonzero_delta = n_nonzero_delta,
+    mean_biopsy = mean(wide$Biopsy),
+    sd_biopsy = stats::sd(wide$Biopsy),
+    mean_surgery = mean(wide$Surgery),
+    sd_surgery = stats::sd(wide$Surgery),
+    mean_delta = mean(wide$Delta),
+    sd_delta = stats::sd(wide$Delta)
+  )
+
+  if (n_pairs < MIN_PAIRED_N) {
+    return(list(
+      stats = stats_base %>% dplyr::mutate(p_value = NA_real_, note = paste0("skipped_n_pairs<", MIN_PAIRED_N)),
+      wide = wide %>% dplyr::mutate(Method = as.character(Method), Cell_Type = as.character(Cell_Type), cluster = as.character(cluster_label)),
+      skip = make_skip_row_paired(Method, Cell_Type, cluster_label, "n_pairs_too_small", n_pairs, n_unique_delta),
+      pair_audit = pair_audit
+    ))
+  }
+
+  # Wilcoxon signed-rank discards zero differences from the rank calculation.
+  # Only an all-zero delta vector makes the signed-rank test undefined.
+  if (n_nonzero_delta == 0) {
+    return(list(
+      stats = stats_base %>% dplyr::mutate(p_value = NA_real_, note = "skipped_all_zero_deltas"),
+      wide = wide %>% dplyr::mutate(Method = as.character(Method), Cell_Type = as.character(Cell_Type), cluster = as.character(cluster_label)),
+      skip = make_skip_row_paired(Method, Cell_Type, cluster_label, "all_zero_deltas", n_pairs, n_unique_delta),
+      pair_audit = pair_audit
+    ))
+  }
+
+  p <- tryCatch(
+    stats::wilcox.test(
+      wide$Surgery,
+      wide$Biopsy,
+      paired = TRUE,
+      alternative = "two.sided",
+      exact = FALSE,
+      correct = TRUE
+    )$p.value,
+    error = function(e) NA_real_
+  )
+
+  list(
+    stats = stats_base %>% dplyr::mutate(p_value = p, note = NA_character_),
+    wide = wide %>% dplyr::mutate(Method = as.character(Method), Cell_Type = as.character(Cell_Type), cluster = as.character(cluster_label)),
+    skip = NULL,
+    pair_audit = pair_audit
+  )
+}
+
+compute_paired_all <- function(immune_patient_df, out_prefix, write_outputs = FALSE) {
+  # Safety step: paired tests are stratified by mapped CIM groups.
+  immune_patient_df <- apply_cluster_mapping(immune_patient_df) %>%
+    dplyr::filter(!is.na(cluster)) %>%
+    dplyr::mutate(cluster = droplevels(cluster))
+
+  groups <- immune_patient_df %>%
+    dplyr::group_by(Method, Cell_Type, cluster) %>%
+    dplyr::group_split(.keep = TRUE)
+
+  paired_results <- purrr::map(
+    groups,
+    ~ paired_one(
+      .x,
+      .x$Method[[1]],
+      .x$Cell_Type[[1]],
+      .x$cluster[[1]],
+      expected_pairs_df = expected_paired_patients
+    )
+  )
+
+  stats_tbl <- purrr::map(paired_results, "stats") %>% bind_rows()
+  wide_tbl <- purrr::map(paired_results, "wide") %>% bind_rows()
+  skip_tbl <- purrr::map(paired_results, "skip") %>% bind_rows()
+  pair_audit_tbl <- purrr::map(paired_results, "pair_audit") %>% bind_rows()
+
+  stats_tbl <- stats_tbl %>%
+    group_by(Method, cluster) %>%
+    mutate(FDR = p.adjust(p_value, method = "BH")) %>%
+    ungroup() %>%
+    arrange(Method, cluster, Cell_Type)
+
+  if (nrow(skip_tbl) == 0) {
+    skip_tbl <- tibble(analysis = character(), Method = character(), Cell_Type = character(), cluster = character(), reason = character(), n_pairs = integer(), n_unique_delta = integer())
+  }
+
+  pair_completeness_summary <- pair_audit_tbl %>%
+    group_by(Method, Cell_Type, cluster) %>%
+    summarise(
+      n_candidates = n(),
+      n_pairs_used = sum(included_pair),
+      n_dropped = sum(!included_pair),
+      n_missing_biopsy = sum(exclusion_reason == "missing_or_nonfinite_biopsy", na.rm = TRUE),
+      n_missing_surgery = sum(exclusion_reason == "missing_or_nonfinite_surgery", na.rm = TRUE),
+      n_missing_both = sum(exclusion_reason == "missing_or_nonfinite_both_timepoints", na.rm = TRUE),
+      dropped_patient_ids = paste(Patient_ID[!included_pair], collapse = ";"),
+      .groups = "drop"
+    ) %>%
+    arrange(Method, cluster, Cell_Type)
+
+  if (isTRUE(write_outputs)) {
+    write.csv(stats_tbl, file.path(DIRS$tables, paste0(out_prefix, "_paired_stats.csv")), row.names = FALSE)
+    # Patient-level exclusions/invalid pairs are retained in CSVs, not on figures.
+    write.csv(pair_audit_tbl, file.path(DIRS$tables, paste0(out_prefix, "_paired_pair_completeness_by_patient.csv")), row.names = FALSE)
+    write.csv(pair_completeness_summary, file.path(DIRS$tables, paste0(out_prefix, "_paired_pair_completeness_summary.csv")), row.names = FALSE)
+  }
+
+  list(
+    stats = stats_tbl,
+    wide = wide_tbl,
+    skipped = skip_tbl,
+    pair_audit = pair_audit_tbl,
+    pair_completeness = pair_completeness_summary
+  )
+}
+
+paired_original <- compute_paired_all(immune_patient, "ORIGINAL", write_outputs = FALSE)
+paired_aggregated <- compute_paired_all(immune_patient_aggregated, "AGGREGATED", write_outputs = TRUE)
+```
+
+# Plots
+
+The plotting layer deliberately includes **all** returned cell types and score endpoints. In particular, score-like outputs such as `immune score`, `cytotoxicity score`, `ImmuneScore`, `StromalScore`, and `ESTIMATEScore` are not filtered out. Plot generation is audited so that any failed or skipped plot is written to a CSV instead of silently disappearing.
+
+```{r plotting-functions}
+# Unpaired figures are strictly patient-level. Upstream QC requires exactly one
+# value per Patient_ID for each Method × Cell_Type × Timepoint combination; the
+# plotting layer does not silently average or discard duplicates. A box may still
+# collapse to a horizontal line when Q1 = median = Q3 (IQR = 0), which is a genuine
+# feature of the data and is not artificially expanded.
+
+# Choose which value to display on unpaired plots.
+PLOT_P_COLUMN <- "p_value"
+# PLOT_P_COLUMN <- "FDR"   # Use this instead for adjusted P values.
+
+# ------------------------------------------------------------------------------
+# Feature-specific y-axis limits
+# ------------------------------------------------------------------------------
+# Earlier versions used a method-wide lower bound. That is unnecessarily broad
+# for methods that return heterogeneous outputs (cell scores + composite scores)
+# and can visually compress individual endpoints. We now compute limits from the
+# actual Method x Cell_Type data being plotted.
+feature_ylims <- function(values, lower_zero_if_nonnegative = TRUE) {
+  v <- as.numeric(values)
+  v <- v[is.finite(v)]
+
+  if (!length(v)) return(c(0, 0.01))
+
+  vmin <- min(v)
+  vmax <- max(v)
+  span <- vmax - vmin
+
+  if (!is.finite(span) || span <= 0) {
+    span <- max(abs(vmax) * 0.20, 0.01)
+  }
+
+  lower <- if (lower_zero_if_nonnegative && vmin >= 0) 0 else vmin - 0.08 * span
+  upper <- vmax + 0.18 * span
+
+  if (!is.finite(lower) || !is.finite(upper) || lower >= upper) {
+    lower <- vmin - 0.01
+    upper <- vmax + 0.01
+  }
+
+  c(lower, upper)
+}
+
+compute_shared_ylims <- function(df, method_ymin = NULL) {
+  feature_ylims(df$Value)
+}
+
+format_plot_p <- function(p) {
+  if (length(p) == 0 || is.na(p) || !is.finite(p)) return("P = N/A")
+  if (p < 0.0001) return("P < 0.0001")
+  paste0("P = ", formatC(p, format = "f", digits = 4))
+}
+
+plot_unpaired_one <- function(
+    df,
+    shared_ylim,
+    unpaired_stats,
+    p_column = PLOT_P_COLUMN
+) {
+  # Plot exactly the patient-level observations used by the unpaired test.
+  # Duplicates are not averaged here; they indicate an upstream integrity issue.
+  df <- df %>%
+    dplyr::filter(is.finite(Value), !is.na(cluster), !is.na(Patient_ID))
+
+  dup <- df %>%
+    dplyr::count(Patient_ID, name = "n_rows") %>%
+    dplyr::filter(n_rows > 1)
+  if (nrow(dup) > 0) {
+    stop(
+      "Duplicate patients reached unpaired plotting: ",
+      paste(dup$Patient_ID, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  if (dplyr::n_distinct(df$cluster) < 2) return(NULL)
+
+  method_name <- as.character(unique(df$Method)[1])
+  cell_type   <- as.character(unique(df$Cell_Type)[1])
+  timepoint   <- as.character(unique(df$Timepoint)[1])
+
+  df <- df %>%
+    mutate(cluster = factor(as.character(cluster), levels = names(cluster_colors)))
+
+  stat_row <- unpaired_stats %>%
+    mutate(Timepoint = as.character(Timepoint)) %>%
+    filter(
+      Method == method_name,
+      Cell_Type == cell_type,
+      Timepoint == timepoint
+    )
+
+  if (nrow(stat_row) > 1) {
+    stop("Multiple unpaired-stat rows matched one plot: ", method_name, " / ", cell_type, " / ", timepoint, call. = FALSE)
+  }
+
+  # The figure and the statistical table must use exactly the same patient n.
+  if (nrow(stat_row) == 1) {
+    for (cl in c("Fun-CIM", "Dys-CIM")) {
+      n_col <- paste0(cl, "_n")
+      if (n_col %in% names(stat_row)) {
+        n_plot <- dplyr::n_distinct(df$Patient_ID[as.character(df$cluster) == cl])
+        n_stat <- suppressWarnings(as.integer(stat_row[[n_col]][1]))
+        if (!is.na(n_stat) && n_plot != n_stat) {
+          stop(
+            "Unpaired plot/stat n mismatch for ", method_name, " / ", cell_type,
+            " / ", timepoint, " / ", cl, ": plot n=", n_plot,
+            ", stats n=", n_stat, ".",
+            call. = FALSE
+          )
+        }
+      }
+    }
+  }
+
+  if (!p_column %in% names(stat_row) || nrow(stat_row) == 0) {
+    stop(
+      "No unpaired statistic matched plot: ", method_name, " / ", cell_type,
+      " / ", timepoint, ". Expected column: ", p_column, ".",
+      call. = FALSE
+    )
+  } else {
+    p_value <- suppressWarnings(as.numeric(stat_row[[p_column]][1]))
+    if (!is.finite(p_value)) {
+      stat_note <- if ("note" %in% names(stat_row)) as.character(stat_row$note[1]) else NA_character_
+      stop(
+        "Unpaired P value is NA/non-finite for ", method_name, " / ", cell_type,
+        " / ", timepoint,
+        if (!is.na(stat_note) && nzchar(stat_note)) paste0(" (", stat_note, ")") else "",
+        ". Check AGGREGATED_unpaired_global.csv and the warnings above.",
+        call. = FALSE
+      )
+    }
+  }
+
+  p_label <- format_plot_p(p_value)
+  y_position <- shared_ylim[2] - 0.05 * diff(shared_ylim)
+
+  ggplot(df, aes(x = cluster, y = Value, fill = cluster)) +
+    geom_boxplot(
+      outlier.shape = NA,
+      width = PLOT_BOX_WIDTH,
+      alpha = PLOT_BOX_ALPHA,
+      linewidth = PLOT_BOX_LINEWIDTH,
+      color = "gray20"
+    ) +
+    geom_jitter(
+      width = PLOT_JITTER_WIDTH,
+      alpha = PLOT_UNPAIRED_POINT_ALPHA,
+      size = PLOT_UNPAIRED_POINT_SIZE,
+      color = "gray20"
+    ) +
+    annotate(
+      "text",
+      x = 1.5,
+      y = y_position,
+      label = p_label,
+      size = PLOT_P_ANNOTATION_SIZE,
+      fontface = "bold"
+    ) +
+    scale_fill_manual(values = cluster_colors, name = "Cluster", drop = FALSE) +
+    theme_pub() +
+    coord_cartesian(ylim = shared_ylim, clip = "off") +
+    labs(
+      title = paste0(cell_type, " — ", timepoint),
+      x = "",
+      y = method_value_type(method_name)
+    ) +
+    theme(legend.position = "none")
+}
+
+save_unpaired_plots <- function(
+    immune_patient_df,
+    method_ymin,
+    version_label,
+    unpaired_stats,
+    p_column = PLOT_P_COLUMN
+) {
+  immune_patient_df <- apply_cluster_mapping(immune_patient_df) %>%
+    mutate(cluster = droplevels(cluster))
+
+  out_dir <- DIRS$plots
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+
+  combinations <- immune_patient_df %>%
+    distinct(Method, Cell_Type, Timepoint) %>%
+    arrange(Method, Cell_Type, Timepoint)
+
+  audit_rows <- vector("list", nrow(combinations))
+
+  for (i in seq_len(nrow(combinations))) {
+    method_i <- combinations$Method[[i]]
+    cell_type_i <- combinations$Cell_Type[[i]]
+    timepoint_i <- combinations$Timepoint[[i]]
+
+    # IMPORTANT: use uniquely named environment variables on the RHS.
+    # Using `Method`, `Cell_Type`, or `Timepoint` as loop variables here can
+    # collide with identically named data columns inside dplyr::filter(),
+    # causing a condition such as `.data$Method == Method` to evaluate as
+    # column == itself and unintentionally retain every method/cell type.
+    plot_data <- immune_patient_df %>%
+      filter(
+        .data$Method == .env$method_i,
+        .data$Cell_Type == .env$cell_type_i,
+        .data$Timepoint == .env$timepoint_i,
+        is.finite(.data$Value),
+        !is.na(.data$cluster),
+        !is.na(.data$Patient_ID)
+      )
+
+    # Hard QC: an unpaired method/cell-type/timepoint plot must contain at most
+    # one observation per patient. Stop rather than silently drawing a malformed
+    # figure if duplicate patient rows survive upstream processing.
+    dup_qc <- plot_data %>%
+      count(Patient_ID, name = "n_rows") %>%
+      filter(n_rows > 1)
+    if (nrow(dup_qc) > 0) {
+      stop(
+        "Duplicate patient observations remain in unpaired plot data for ",
+        method_i, " / ", cell_type_i, " / ", as.character(timepoint_i),
+        ". Patient IDs: ", paste(dup_qc$Patient_ID, collapse = ", "),
+        call. = FALSE
+      )
+    }
+
+    plot_subdir <- if (identical(version_label, "ORIGINAL")) "unpaired_original" else "unpaired"
+    method_dir <- file.path(out_dir, method_dir_name(method_i), plot_subdir)
+    dir.create(method_dir, recursive = TRUE, showWarnings = FALSE)
+    file_png <- file.path(
+      method_dir,
+      paste0(safe_stem(timepoint_i, cell_type_i), ".png")
+    )
+
+    status <- "saved"
+    error_message <- NA_character_
+
+    if (nrow(plot_data) == 0) {
+      status <- "skipped_no_data"
+    } else if (n_distinct(plot_data$cluster) < 2) {
+      status <- "skipped_lt2_groups"
+    } else {
+      tryCatch({
+        shared_ylim <- compute_shared_ylims(plot_data, method_ymin)
+        plot_object <- plot_unpaired_one(
+          df = plot_data,
+          shared_ylim = shared_ylim,
+          unpaired_stats = unpaired_stats,
+          p_column = p_column
+        )
+
+        if (is.null(plot_object)) {
+          status <- "skipped_plot_null"
+        } else {
+          ggsave(
+            file_png,
+            plot_object,
+            width = PLOT_WIDTH_UNPAIRED,
+            height = PLOT_HEIGHT_UNPAIRED,
+            dpi = PLOT_DPI
+          )
+        }
+      }, error = function(e) {
+        status <<- "failed"
+        error_message <<- conditionMessage(e)
+      })
+    }
+
+    audit_rows[[i]] <- tibble(
+      version = version_label,
+      plot_type = "unpaired",
+      Method = method_i,
+      Cell_Type = cell_type_i,
+      Timepoint = as.character(timepoint_i),
+      cluster = NA_character_,
+      n_values = nrow(plot_data),
+      n_patients = n_distinct(plot_data$Patient_ID),
+      n_fun_cim = n_distinct(plot_data$Patient_ID[as.character(plot_data$cluster) == "Fun-CIM"]),
+      n_dys_cim = n_distinct(plot_data$Patient_ID[as.character(plot_data$cluster) == "Dys-CIM"]),
+      n_groups = n_distinct(plot_data$cluster),
+      output_file = file_png,
+      file_exists = file.exists(file_png),
+      status = status,
+      error_message = error_message
+    )
+  }
+
+  audit <- bind_rows(audit_rows)
+  audit
+}
+
+compute_shared_ylims_paired <- function(paired_wide_df, method, cell_type, method_ymin = NULL) {
+  all_values <- paired_wide_df %>%
+    filter(.data$Method == .env$method, .data$Cell_Type == .env$cell_type) %>%
+    select(Biopsy, Surgery) %>%
+    unlist(use.names = FALSE) %>%
+    as.numeric()
+
+  feature_ylims(all_values)
+}
+
+plot_paired_split_one <- function(
+    paired_wide_df,
+    paired_stats_df,
+    method,
+    cell_type,
+    cluster_level,
+    shared_ylim
+) {
+  d <- paired_wide_df %>%
+    filter(
+      .data$Method == .env$method,
+      .data$Cell_Type == .env$cell_type,
+      as.character(.data$cluster) == as.character(.env$cluster_level)
+    )
+
+  if (nrow(d) < 3) return(NULL)
+
+  stat_row <- paired_stats_df %>%
+    filter(
+      .data$Method == .env$method,
+      .data$Cell_Type == .env$cell_type,
+      as.character(.data$cluster) == as.character(.env$cluster_level)
+    )
+
+  pval <- if (nrow(stat_row) > 0) suppressWarnings(as.numeric(stat_row$p_value[[1]])) else NA_real_
+  p_label <- format_plot_p(pval)
+
+  # Display only the actual number of complete patient pairs used for this
+  # metric/cluster. Exclusion details are retained in the paired-completeness
+  # CSV outputs rather than shown on the figure.
+  n_pairs_used <- nrow(d)
+
+  if (nrow(stat_row) > 0 && "n_pairs" %in% names(stat_row)) {
+    n_pairs_stats <- suppressWarnings(as.integer(stat_row$n_pairs[[1]]))
+    if (!is.na(n_pairs_stats) && n_pairs_stats != n_pairs_used) {
+      stop(
+        "Paired plot-count consistency check failed for ", method, " / ", cell_type,
+        " / ", as.character(cluster_level), ": plot has ", n_pairs_used,
+        " pairs but paired statistics report ", n_pairs_stats, ".",
+        call. = FALSE
+      )
+    }
+  }
+
+  pair_subtitle <- paste0("n = ", n_pairs_used, " pairs")
+
+  plot_df <- d %>%
+    select(Patient_ID, Biopsy, Surgery) %>%
+    pivot_longer(
+      cols = c(Biopsy, Surgery),
+      names_to = "Timepoint",
+      values_to = "Value"
+    ) %>%
+    mutate(Timepoint = factor(Timepoint, levels = c("Biopsy", "Surgery")))
+
+  y_position <- shared_ylim[2] - 0.05 * diff(shared_ylim)
+
+  ggplot(plot_df, aes(x = Timepoint, y = Value, group = Patient_ID)) +
+    geom_line(
+      color = PLOT_PAIRED_LINE_COLOR,
+      alpha = PLOT_PAIRED_LINE_ALPHA,
+      linewidth = PLOT_PAIRED_LINE_WIDTH
+    ) +
+    geom_point(
+      aes(color = Timepoint),
+      size = PLOT_PAIRED_POINT_SIZE,
+      alpha = PLOT_PAIRED_POINT_ALPHA
+    ) +
+    scale_color_manual(values = TIMEPOINT_COLORS, drop = FALSE) +
+    theme_pub() +
+    coord_cartesian(ylim = shared_ylim, clip = "off") +
+    labs(
+      title = paste0(cell_type, " — ", as.character(cluster_level)),
+      subtitle = pair_subtitle,
+      x = "",
+      y = method_value_type(method)
+    ) +
+    annotate(
+      "text",
+      x = 1.5,
+      y = y_position,
+      label = p_label,
+      size = PLOT_P_ANNOTATION_SIZE,
+      fontface = "bold"
+    ) +
+    theme(legend.position = "none")
+}
+
+save_paired_split_plots <- function(paired_obj, method_ymin, version_label) {
+  paired_obj$wide <- apply_cluster_mapping(paired_obj$wide) %>%
+    mutate(cluster = droplevels(cluster))
+
+  paired_obj$stats <- apply_cluster_mapping(paired_obj$stats) %>%
+    mutate(cluster = droplevels(cluster))
+
+  out_dir <- DIRS$plots
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+
+  wide <- paired_obj$wide
+  stats <- paired_obj$stats
+
+  combos <- wide %>%
+    distinct(Method, Cell_Type, cluster) %>%
+    arrange(Method, Cell_Type, cluster)
+
+  audit_rows <- vector("list", nrow(combos))
+
+  for (i in seq_len(nrow(combos))) {
+    method_i <- combos$Method[[i]]
+    cell_type_i <- combos$Cell_Type[[i]]
+    cluster_i <- as.character(combos$cluster[[i]])
+
+    # Use explicit environment variables to prevent dplyr data-mask name
+    # collisions (column == column), which would otherwise mix methods,
+    # cell types, and CIM trajectories in a single paired figure.
+    d <- wide %>%
+      filter(
+        .data$Method == .env$method_i,
+        .data$Cell_Type == .env$cell_type_i,
+        as.character(.data$cluster) == .env$cluster_i
+      )
+
+    plot_subdir <- if (identical(version_label, "ORIGINAL")) "paired_original" else "paired"
+    method_dir <- file.path(out_dir, method_dir_name(method_i), plot_subdir)
+    dir.create(method_dir, recursive = TRUE, showWarnings = FALSE)
+    file_png <- file.path(
+      method_dir,
+      paste0(safe_stem(cluster_file_label(cluster_i), cell_type_i), ".png")
+    )
+
+    status <- "saved"
+    error_message <- NA_character_
+
+    if (nrow(d) < 3) {
+      status <- "skipped_lt3_pairs"
+    } else {
+      tryCatch({
+        shared_ylim <- compute_shared_ylims_paired(wide, method_i, cell_type_i, method_ymin)
+        p <- plot_paired_split_one(
+          paired_wide_df = wide,
+          paired_stats_df = stats,
+          method = method_i,
+          cell_type = cell_type_i,
+          cluster_level = cluster_i,
+          shared_ylim = shared_ylim
+        )
+
+        if (is.null(p)) {
+          status <- "skipped_plot_null"
+        } else {
+          ggsave(
+            file_png,
+            p,
+            width = PLOT_WIDTH_PAIRED,
+            height = PLOT_HEIGHT_PAIRED,
+            dpi = PLOT_DPI
+          )
+        }
+      }, error = function(e) {
+        status <<- "failed"
+        error_message <<- conditionMessage(e)
+      })
+    }
+
+    audit_rows[[i]] <- tibble(
+      version = version_label,
+      plot_type = "paired",
+      Method = method_i,
+      Cell_Type = cell_type_i,
+      Timepoint = NA_character_,
+      cluster = cluster_i,
+      n_values = 2L * nrow(d),
+      n_pairs_used = nrow(d),
+      n_groups = 1L,
+      output_file = file_png,
+      file_exists = file.exists(file_png),
+      status = status,
+      error_message = error_message
+    )
+  }
+
+  audit <- bind_rows(audit_rows)
+  audit
+}
+```
+
+```{r run-plots}
+if (params$make_plots) {
+  # Optional original-method plots (off by default).
+  if (isTRUE(MAKE_ORIGINAL_PLOTS)) {
+    save_unpaired_plots(
+      immune_patient,
+      method_ymin_original,
+      "ORIGINAL",
+      unpaired_original$global
+    )
+    save_paired_split_plots(
+      paired_original,
+      method_ymin_original,
+      "ORIGINAL"
+    )
+  }
+
+  unpaired_plot_audit <- save_unpaired_plots(
+    immune_patient_aggregated,
+    method_ymin_aggregated,
+    "AGGREGATED",
+    unpaired_aggregated$global
+  )
+
+  paired_plot_audit <- save_paired_split_plots(
+    paired_aggregated,
+    method_ymin_aggregated,
+    "AGGREGATED"
+  )
+
+  # Hard check for key cytotoxicity endpoints. If the data exist but the plot was
+  # not saved, stop with a targeted message rather than silently finishing.
+  cytotox_unpaired_expected <- immune_patient_aggregated %>%
+    filter(Cell_Type == "cytotoxicity score") %>%
+    distinct(Method, Cell_Type, Timepoint)
+
+  cytotox_paired_expected <- paired_aggregated$wide %>%
+    filter(Cell_Type == "cytotoxicity score") %>%
+    distinct(Method, Cell_Type, cluster)
+
+  cytotox_unpaired_failed <- unpaired_plot_audit %>%
+    filter(Cell_Type == "cytotoxicity score", status != "saved")
+
+  cytotox_paired_failed <- paired_plot_audit %>%
+    filter(Cell_Type == "cytotoxicity score", status != "saved")
+
+  if (nrow(cytotox_unpaired_expected) > 0 && nrow(cytotox_unpaired_failed) > 0) {
+    warning(
+      "One or more cytotoxicity-score unpaired plots were not saved.",
+      call. = FALSE
+    )
+  }
+
+  if (nrow(cytotox_paired_expected) > 0 && nrow(cytotox_paired_failed) > 0) {
+    warning(
+      "One or more cytotoxicity-score paired plots were not saved.",
+      call. = FALSE
+    )
+  }
+}
+```
+
+# Heatmaps
+
+The cluster-level heatmap uses mean delta values, where delta is defined as:
+
+```text
+Delta = Surgery - Biopsy
+```
+
+Mean deltas are z-scored within each deconvolution method.
+
+```{r heatmap-functions}
+calculate_zscore_cluster_mean_deltas <- function(paired_wide_df) {
+  paired_wide_df <- apply_cluster_mapping(paired_wide_df) %>%
+    dplyr::mutate(cluster = droplevels(cluster))
+
+  required_cols <- c("Method", "Cell_Type", "cluster", "Biopsy", "Surgery", "Delta")
+  missing_cols <- base::setdiff(required_cols, colnames(paired_wide_df))
+  if (length(missing_cols) > 0) stop("Missing required columns: ", paste(missing_cols, collapse = ", "))
+
+  paired_wide_df %>%
+    filter(!is.na(cluster)) %>%
+    group_by(Method, Cell_Type, cluster) %>%
+    summarise(
+      n_pairs = n(),
+      mean_biopsy = mean(Biopsy, na.rm = TRUE),
+      sd_biopsy = sd(Biopsy, na.rm = TRUE),
+      mean_surgery = mean(Surgery, na.rm = TRUE),
+      sd_surgery = sd(Surgery, na.rm = TRUE),
+      mean_delta = mean(Delta, na.rm = TRUE),
+      sd_delta = sd(Delta, na.rm = TRUE),
+      p_value = if (n() >= 3) tryCatch(wilcox.test(Surgery, Biopsy, paired = TRUE, exact = FALSE)$p.value, error = function(e) NA_real_) else NA_real_,
+      .groups = "drop"
+    ) %>%
+    filter(n_pairs >= 3) %>%
+    group_by(Method, cluster) %>%
+    mutate(FDR = p.adjust(p_value, method = "BH")) %>%
+    ungroup() %>%
+    group_by(Method) %>%
+    mutate(zscore_delta = safe_zscore(mean_delta)) %>%
+    ungroup()
+}
+
+prepare_method_cell_by_cluster_matrix <- function(zscore_deltas, fill_na = FALSE) {
+  zscore_deltas <- zscore_deltas %>%
+    mutate(CellType_Method = paste0(Method, ": ", Cell_Type), cluster = as.character(cluster)) %>%
+    filter(!is.na(cluster))
+
+  cluster_order <- unique(unname(CLUSTER_MAPPING))
+  present_clusters <- unique(as.character(zscore_deltas$cluster))
+  clusts_display <- cluster_order[cluster_order %in% present_clusters]
+  if (length(clusts_display) == 0) clusts_display <- present_clusters
+
+  mat <- zscore_deltas %>%
+    select(CellType_Method, cluster, zscore_delta) %>%
+    pivot_wider(names_from = cluster, values_from = zscore_delta) %>%
+    column_to_rownames("CellType_Method") %>%
+    as.matrix()
+
+  sig_mat <- zscore_deltas %>%
+    select(CellType_Method, cluster, FDR) %>%
+    pivot_wider(names_from = cluster, values_from = FDR) %>%
+    column_to_rownames("CellType_Method") %>%
+    as.matrix()
+
+  mat <- mat[, clusts_display, drop = FALSE]
+  sig_mat <- sig_mat[, clusts_display, drop = FALSE]
+  if (fill_na) mat[is.na(mat)] <- 0
+
+  method_anno <- data.frame(
+    CellType_Method = rownames(mat),
+    Method = sub(":.*$", "", rownames(mat)),
+    stringsAsFactors = FALSE
+  )
+  method_anno$Method <- factor(method_anno$Method, levels = METHOD_ORDER)
+  ord <- order(method_anno$Method, method_anno$CellType_Method)
+
+  list(mat = mat[ord, , drop = FALSE], sig = sig_mat[ord, , drop = FALSE], anno = method_anno[ord, , drop = FALSE])
+}
+
+plot_cluster_delta_heatmap <- function(zscore_deltas, output_file, show_significance = TRUE, cluster_rows = TRUE, fill_na = FALSE, na_col = "grey90") {
+  prep <- prepare_method_cell_by_cluster_matrix(zscore_deltas, fill_na = fill_na)
+  mat <- prep$mat
+  sig <- prep$sig
+  anno <- prep$anno
+
+  if (nrow(mat) == 0 || ncol(mat) == 0 || all(is.na(mat))) stop("Heatmap matrix is empty or all NA.")
+
+  max_abs <- max(abs(mat), na.rm = TRUE)
+  if (!is.finite(max_abs) || max_abs == 0) max_abs <- 2
+  max_abs <- max(max_abs, 2)
+
+  col_fun <- circlize::colorRamp2(c(-max_abs, -1, 0, 1, max_abs), c("#0571B0", "#92C5DE", "white", "#F4A582", "#CA0020"))
+
+  methods_present <- unique(as.character(anno$Method))
+  method_colors_subset <- METHOD_COLORS[methods_present]
+  method_colors_subset <- method_colors_subset[!is.na(method_colors_subset)]
+
+  row_ha <- ComplexHeatmap::rowAnnotation(
+    Method = anno$Method,
+    col = list(Method = method_colors_subset),
+    annotation_name_gp = grid::gpar(fontsize = 11, fontface = "bold")
+  )
+
+  cell_fun <- NULL
+  if (show_significance) {
+    cell_fun <- function(j, i, x, y, width, height, fill) {
+      fdr <- sig[i, j]
+      if (is.na(fdr)) return(NULL)
+      label <- if (fdr < 0.001) "***" else if (fdr < 0.01) "**" else if (fdr < 0.05) "*" else ""
+      if (label != "") grid::grid.text(label, x, y, gp = grid::gpar(fontsize = 8, fontface = "bold"))
+    }
+  }
+
+  display_names <- stringr::str_remove(rownames(mat), "^[^:]+: ")
+
+  ht <- ComplexHeatmap::Heatmap(
+    mat,
+    name = "Z-score\n(mean Δ)",
+    col = col_fun,
+    na_col = na_col,
+    cell_fun = cell_fun,
+    row_names_side = "left",
+    row_labels = display_names,
+    row_names_gp = grid::gpar(fontsize = 9),
+    cluster_rows = cluster_rows,
+    show_row_dend = cluster_rows,
+    cluster_columns = FALSE,
+    column_names_gp = grid::gpar(fontsize = 14, fontface = "bold"),
+    column_names_rot = 0,
+    column_title = "Cluster-mean zΔ (Surgery - Biopsy)",
+    column_title_gp = grid::gpar(fontsize = 16, fontface = "bold"),
+    left_annotation = row_ha,
+    border = TRUE
+  )
+
+  plot_height <- max(10, nrow(mat) * 0.15 + 3)
+  png(output_file, width = 12, height = plot_height, units = "in", res = 300)
+  ComplexHeatmap::draw(ht, heatmap_legend_side = "right", annotation_legend_side = "bottom")
+  dev.off()
+
+  output_file
+}
+```
+
+```{r run-heatmaps}
+if (params$make_heatmaps) {
+  zscore_deltas_agg <- calculate_zscore_cluster_mean_deltas(paired_aggregated$wide)
+
+  write.csv(zscore_deltas_agg, file.path(DIRS$tables, "AGGREGATED_zscore_cluster_mean_deltas.csv"), row.names = FALSE)
+
+  prep_tmp <- prepare_method_cell_by_cluster_matrix(zscore_deltas_agg, fill_na = FALSE)
+  write.csv(prep_tmp$mat, file.path(DIRS$tables, "AGGREGATED_heatmap_matrix_zscore_delta.csv"))
+
+  heat_file <- file.path(DIRS$plots, "heatmap_zDelta.png")
+  plot_cluster_delta_heatmap(zscore_deltas_agg, heat_file, show_significance = TRUE, cluster_rows = TRUE, fill_na = FALSE)
+}
+```
+
+# Output summary
+
+```{r output-summary}
+
+cat("NEO analysis complete.
+")
+cat("Results folder:", DIRS$results, "
+")
+cat("Plots folder:", DIRS$plots, "
+")
+cat("Tables folder:", DIRS$tables, "
+")
+cat("Cluster mapping:", paste(names(CLUSTER_MAPPING), "=", unname(CLUSTER_MAPPING), collapse = "; "), "
+")
+```
+
+# Compact output summary
+
+```{r compact-output-summary}
+cat("Compact analysis complete.\n")
+cat("Tables: ", DIRS$tables, "\n", sep = "")
+cat("Figures: ", DIRS$plots, "\n", sep = "")
+cat("Original plots enabled: ", MAKE_ORIGINAL_PLOTS, "\n", sep = "")
+```

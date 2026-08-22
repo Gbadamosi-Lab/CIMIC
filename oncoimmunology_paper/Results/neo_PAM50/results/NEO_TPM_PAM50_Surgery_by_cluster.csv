@@ -1,0 +1,7 @@
+"Condition","cluster_assignments","PAM50_Subtype","n","prop"
+"Surgery",1,"Basal",4,0.444
+"Surgery",1,"Her2",2,0.222
+"Surgery",1,"LumB",3,0.333
+"Surgery",2,"Basal",5,0.5
+"Surgery",2,"LumB",1,0.1
+"Surgery",2,"LumA",4,0.4

@@ -37,7 +37,7 @@ mat <- master_induction_df %>%
   as.matrix()
 
 # Update column names with new sample sizes
-colnames(mat) <- c("Dys-CIM\nN = 10", "Fun-CIM\nN = 9")
+colnames(mat) <- c("Dys-CIM\nN = 9", "Fun-CIM\nN = 10")
 
 # 2. Define color palette (same as original)
 color_fn <- colorRamp2(
@@ -51,7 +51,7 @@ row_dend <- as.dendrogram(fastcluster::hclust(dist(mat)))
 # 4. Define Bottom Annotation Track (Pushes labels cleanly below border)
 column_ha <- HeatmapAnnotation(
   labels = anno_text(
-    c("Dys-CIM\nN = 10", "Fun-CIM\nN = 9"),
+    c("Dys-CIM\nN = 9", "Fun-CIM\nN = 10"),
     location = 0.5,
     just = "center",
     rot = 0,
