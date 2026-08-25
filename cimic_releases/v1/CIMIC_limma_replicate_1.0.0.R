@@ -846,7 +846,7 @@ dir.create(results_dir, recursive = TRUE)
 # =========================================================================
 # Main function
 # =========================================================================
-CIM_feature_selection_by_gene_set_pacmap <- function(
+CIMIC <- function(
     clustering_matrix,                       # rows: samples x cols: genes
     all_gene_sets = NULL,
     remove_immune_variable_genes = TRUE,
