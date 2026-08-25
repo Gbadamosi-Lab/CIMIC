@@ -1,3 +1,4 @@
+
 # =============================================================================
 # MAKE MASTER INDUCTION DATAFRAME DIRECTLY  —  k = 3
 # =============================================================================
@@ -306,7 +307,7 @@ cat("Clustered plot df saved:", csv_file_cluster_induction, "\n")
 # =============================================================================
 # 20. VENN DIAGRAMS
 # =============================================================================
-# Three Venn diagrams are produced:
+# Four Venn diagrams are produced:
 #
 #   Venn 1 — Global DE (direction-independent):
 #             All genes significantly different between any pair,
@@ -322,9 +323,13 @@ cat("Clustered plot df saved:", csv_file_cluster_induction, "\n")
 #             Genes positively induced in C2 (Dys-CIM) vs C1 and vs C3.
 #             Overlap = robustly Dys-CIM-specific genes.
 #
+#   Venn 4 — Overall positive differential induction by cluster:
+#             For each cluster, genes significantly more induced than at least
+#             one of the other two clusters (union of either comparison).
+#
 # Thresholds:
 #   ADJ_P_THRESHOLD = 0.05  — BH-adjusted LIMMA omnibus F-test
-#   DIFF_THRESHOLD  = 0.5   — adjust to your assay's meaningful delta
+#   DIFF_THRESHOLD  = 0.15  — adjust to your assay's meaningful delta
 #
 # CIM annotation [1]:
 #   Cluster 1 → Fun-CIM
@@ -358,24 +363,26 @@ build_membership_df <- function(master_df, venn_sets) {
 # Draw a styled ggvenn and return the plot object
 draw_venn <- function(venn_sets, title_label, subtitle_label,
                       caption_label, fill_colors) {
-  ggvenn(
+  venn_plot <- ggvenn(
     venn_sets,
     fill_color      = fill_colors,
     stroke_size     = 0.5,
     set_name_size   = 4.5,
-    text_size       = 4,
+    text_size       = 5,
     show_percentage = FALSE
-  ) +
-    labs(
-      title    = title_label,
-      subtitle = subtitle_label,
-      caption  = caption_label
-    ) +
-    theme(
-      plot.title    = element_text(face = "bold", size = 13),
-      plot.subtitle = element_text(size = 10, colour = "grey40"),
-      plot.caption  = element_text(size = 9,  colour = "grey50")
-    )
+  )
+  
+  # Make both set names and region counts bold.
+  for (i in seq_along(venn_plot$layers)) {
+    if (inherits(venn_plot$layers[[i]]$geom, "GeomText")) {
+      venn_plot$layers[[i]]$aes_params$fontface <- "bold"
+    }
+  }
+  
+  venn_plot +
+    labs(title = NULL, subtitle = NULL, caption = NULL) +
+    theme_void() +
+    theme(plot.margin = margin(4, 4, 4, 4))
 }
 
 # -----------------------------------------------------------------------------
@@ -414,7 +421,7 @@ venn_plot_global <- draw_venn(
     "k = ", n_clusters, " clusters  |  ",
     length(unique(unlist(venn_sets_global))), " unique DE genes"
   ),
-  fill_colors = c("#E8C46A", "#7EB6D4", "#6DBF81")   # gold, blue, green
+  fill_colors = c("#7EB6D4", "#f9948c", "#6DBF81")   # C1 blue, C2 gold, C3 green
 )
 
 # -----------------------------------------------------------------------------
@@ -454,7 +461,7 @@ venn_plot_funcim <- draw_venn(
     "Overlap = core Fun-CIM induction signature (shared C1 \u2229 C3)\n",
     "C1 only / C3 only = subcluster-specific Fun-CIM induction"
   ),
-  fill_colors = c("#E8C46A", "#6DBF81")               # gold = C1, green = C3
+  fill_colors = c("#7EB6D4", "#6DBF81")               # blue = C1, green = C3
 )
 
 # -----------------------------------------------------------------------------
@@ -494,29 +501,124 @@ venn_plot_dyscim <- draw_venn(
     "Overlap = robustly Dys-CIM-specific induction (C2 > C1 \u2229 C2 > C3)\n",
     "C2 vs C1 only / C2 vs C3 only = Dys-CIM induction relative to one arm"
   ),
-  fill_colors = c("#7EB6D4", "#7EB6D4")               # both blue = C2
+  fill_colors = c("#f9948c", "#fe8e06")               # both gold = C2
 )
 
 # -----------------------------------------------------------------------------
-# 20f. SAVE ALL THREE VENNS AS SVGs
+# 20f. VENN 4 — OVERALL POSITIVE DIFFERENTIAL INDUCTION BY CLUSTER
+# -----------------------------------------------------------------------------
+# A gene is assigned to a cluster when it is significantly more induced in that
+# cluster than in at least one of the other clusters. "Any comparison" therefore
+# uses the union (OR), not the intersection, of that cluster's pairwise contrasts.
+set_C1_pos_any <- master_induction_df$gene_id[
+  master_induction_df$stat_test_adj_p < ADJ_P_THRESHOLD &
+    (
+      master_induction_df$cluster1_cluster2_differential >= DIFF_THRESHOLD |
+        master_induction_df$cluster1_cluster3_differential >= DIFF_THRESHOLD
+    )
+]
+
+set_C2_pos_any <- master_induction_df$gene_id[
+  master_induction_df$stat_test_adj_p < ADJ_P_THRESHOLD &
+    (
+      master_induction_df$cluster2_cluster1_differential >= DIFF_THRESHOLD |
+        master_induction_df$cluster2_cluster3_differential >= DIFF_THRESHOLD
+    )
+]
+
+set_C3_pos_any <- master_induction_df$gene_id[
+  master_induction_df$stat_test_adj_p < ADJ_P_THRESHOLD &
+    (
+      master_induction_df$cluster3_cluster1_differential >= DIFF_THRESHOLD |
+        master_induction_df$cluster3_cluster2_differential >= DIFF_THRESHOLD
+    )
+]
+
+venn_sets_cluster_positive <- list(
+  "C1" = set_C1_pos_any,
+  "C2" = set_C2_pos_any,
+  "C3" = set_C3_pos_any
+)
+
+cat("\n--- Venn 4: Overall positive differential induction by cluster ---\n")
+cat("C1 positive in any comparison:", length(set_C1_pos_any), "genes\n")
+cat("C2 positive in any comparison:", length(set_C2_pos_any), "genes\n")
+cat("C3 positive in any comparison:", length(set_C3_pos_any), "genes\n")
+cat(
+  "Unique genes across clusters     :",
+  length(unique(unlist(venn_sets_cluster_positive))), "genes\n"
+)
+
+venn_plot_cluster_positive <- draw_venn(
+  venn_sets      = venn_sets_cluster_positive,
+  title_label    = "Overall Positive Differential Induction by Cluster",
+  subtitle_label = paste0(
+    "BH-adj p < ", ADJ_P_THRESHOLD,
+    "  |  differential >= ", DIFF_THRESHOLD,
+    "  |  positive in at least one pairwise comparison"
+  ),
+  caption_label  = paste0(
+    "C1: C1 > C2 or C3  |  C2: C2 > C1 or C3  |  ",
+    "C3: C3 > C1 or C2"
+  ),
+  fill_colors = c("#7EB6D4", "#f9948c", "#6DBF81")   # C1 blue, C2 gold, C3 green
+)
+
+# -----------------------------------------------------------------------------
+# 20g. SAVE ALL FOUR VENNS AS SVGs AND HIGH-RESOLUTION PNGs
 # -----------------------------------------------------------------------------
 svg_venn_global <- file.path(output_dir, "nki_smc_venn_global_DE.svg")
 ggsave(svg_venn_global, venn_plot_global,
        device = "svg", width = 7, height = 6, units = "in")
 cat("Venn 1 (global DE) saved        :", svg_venn_global, "\n")
 
+png_venn_global <- file.path(output_dir, "nki_smc_venn_global_DE.png")
+ggsave(png_venn_global, venn_plot_global,
+       device = "png", width = 7, height = 6, units = "in",
+       dpi = 600, bg = "white")
+cat("Venn 1 (global DE) PNG saved    :", png_venn_global, "\n")
+
 svg_venn_funcim <- file.path(output_dir, "nki_smc_venn_funcim_vs_dyscim.svg")
 ggsave(svg_venn_funcim, venn_plot_funcim,
        device = "svg", width = 7, height = 6, units = "in")
 cat("Venn 2 (Fun-CIM induction) saved:", svg_venn_funcim, "\n")
+
+png_venn_funcim <- file.path(output_dir, "nki_smc_venn_funcim_vs_dyscim.png")
+ggsave(png_venn_funcim, venn_plot_funcim,
+       device = "png", width = 7, height = 6, units = "in",
+       dpi = 600, bg = "white")
+cat("Venn 2 (Fun-CIM induction) PNG saved:", png_venn_funcim, "\n")
 
 svg_venn_dyscim <- file.path(output_dir, "nki_smc_venn_dyscim_specificity.svg")
 ggsave(svg_venn_dyscim, venn_plot_dyscim,
        device = "svg", width = 7, height = 6, units = "in")
 cat("Venn 3 (Dys-CIM specificity) saved:", svg_venn_dyscim, "\n")
 
+png_venn_dyscim <- file.path(output_dir, "nki_smc_venn_dyscim_specificity.png")
+ggsave(png_venn_dyscim, venn_plot_dyscim,
+       device = "png", width = 7, height = 6, units = "in",
+       dpi = 600, bg = "white")
+cat("Venn 3 (Dys-CIM specificity) PNG saved:", png_venn_dyscim, "\n")
+
+svg_venn_cluster_positive <- file.path(
+  output_dir, "nki_smc_venn_cluster_positive_any_comparison.svg"
+)
+ggsave(svg_venn_cluster_positive, venn_plot_cluster_positive,
+       device = "svg", width = 7, height = 6, units = "in")
+cat("Venn 4 (positive induction by cluster) saved:",
+    svg_venn_cluster_positive, "\n")
+
+png_venn_cluster_positive <- file.path(
+  output_dir, "nki_smc_venn_cluster_positive_any_comparison.png"
+)
+ggsave(png_venn_cluster_positive, venn_plot_cluster_positive,
+       device = "png", width = 7, height = 6, units = "in",
+       dpi = 600, bg = "white")
+cat("Venn 4 (positive induction by cluster) PNG saved:",
+    png_venn_cluster_positive, "\n")
+
 # -----------------------------------------------------------------------------
-# 20g. SAVE ALL MEMBERSHIP CSVs  (full statistics preserved)
+# 20h. SAVE ALL MEMBERSHIP CSVs  (full statistics preserved)
 # -----------------------------------------------------------------------------
 fwrite(
   build_membership_df(master_induction_df, venn_sets_global),
@@ -535,6 +637,12 @@ fwrite(
   file.path(output_dir, "venn_dyscim_specificity_membership.csv")
 )
 cat("Venn 3 membership CSV saved.\n")
+
+fwrite(
+  build_membership_df(master_induction_df, venn_sets_cluster_positive),
+  file.path(output_dir, "venn_cluster_positive_any_comparison_membership.csv")
+)
+cat("Venn 4 membership CSV saved.\n")
 
 
 # -----------------------------------------------------------------
@@ -562,12 +670,12 @@ sankey_df <- clustered_df %>%
 cim_totals <- sankey_df %>%
   group_by(cim_state) %>%
   summarise(total = sum(n), .groups = "drop") %>%
-  mutate(label = paste0(cim_state, "\n", total))
+  mutate(label = paste0(cim_state, "\n(n = ", total, ")"))
 
 cluster_totals <- sankey_df %>%
   group_by(cluster_label) %>%
   summarise(total = sum(n), .groups = "drop") %>%
-  mutate(label = paste0(cluster_label, "\n", total))
+  mutate(label = paste0(cluster_label, "\n(n = ", total, ")"))
 
 sankey_df <- sankey_df %>%
   left_join(
@@ -579,24 +687,55 @@ sankey_df <- sankey_df %>%
     by = "cluster_label"
   )
 
-# Factor order: Dys-CIM top, Fun-CIM bottom; C1 top, C2 middle, C3 bottom
-sankey_df$cim_label      <- factor(sankey_df$cim_label,
-                                   levels = rev(cim_totals$label))
-sankey_df$cluster_label2 <- factor(sankey_df$cluster_label2,
-                                   levels = rev(cluster_totals$label))
+# Explicit top-to-bottom order keeps both Fun-CIM rows together on each side:
+# Dys-CIM (n = 11) -> C2 (n = 11)
+# Fun-CIM (n = 25) -> C1 (n = 14), C3 (n = 11)
+cim_order_top_to_bottom     <- c("Dys-CIM", "Fun-CIM")
+cluster_order_top_to_bottom <- c("C2", "C1", "C3")
+
+cim_label_levels <- cim_totals %>%
+  mutate(cim_state = factor(cim_state, levels = cim_order_top_to_bottom)) %>%
+  arrange(cim_state) %>%
+  pull(label)
+
+cluster_label_levels <- cluster_totals %>%
+  mutate(
+    cluster_label = factor(
+      cluster_label,
+      levels = cluster_order_top_to_bottom
+    )
+  ) %>%
+  arrange(cluster_label) %>%
+  pull(label)
+
+# ggalluvial draws factor levels from bottom to top, so reverse the desired order.
+sankey_df$cim_label <- factor(
+  sankey_df$cim_label,
+  levels = rev(cim_label_levels)
+)
+sankey_df$cluster_label2 <- factor(
+  sankey_df$cluster_label2,
+  levels = rev(cluster_label_levels)
+)
 
 # -----------------------------------------------------------------------------
 # 21c. COLOUR PALETTE
 # -----------------------------------------------------------------------------
 cim_colours <- c(
-  "Dys-CIM" = "#7EB6D4",    # muted blue
-  "Fun-CIM" = "#F2A89B"     # salmon/pink
+  "Dys-CIM" = "#7EB6D4",    # salmon/pink
+  "Fun-CIM" =   "#f9948c"   # muted blue
 )
 
 cluster_colours <- c(
-  "C1" = "#E8C46A",    # gold/amber
-  "C2" = "#7EB6D4",    # blue
+  "C1" = "#7EB6D4",    # blue
+  "C2" = "#f9948c",    # gold/amber
   "C3" = "#6DBF81"     # green
+)
+
+# Match the labelled strata (which include counts) to their corresponding colors.
+stratum_colours <- c(
+  setNames(cim_colours[cim_totals$cim_state], cim_totals$label),
+  setNames(cluster_colours[cluster_totals$cluster_label], cluster_totals$label)
 )
 
 # -----------------------------------------------------------------------------
@@ -608,56 +747,69 @@ sankey_plot <- ggplot(
 ) +
   geom_alluvium(
     aes(fill = cim_state),
-    width    = 0.25,
+    width    = 0.12,
     alpha    = 0.85,
     knot.pos = 0.4
   ) +
   geom_stratum(
     aes(fill = after_stat(stratum)),
-    width     = 0.25,
+    width     = 0.12,
     color     = "white",
     linewidth = 0.3
   ) +
   geom_text(
     stat     = "stratum",
     aes(label = after_stat(stratum)),
-    size     = 3.8,
+    size     = 2.4,
     fontface = "bold",
-    color    = "white"
+    color    = "black"
   ) +
   scale_x_discrete(
     limits = c("CIM State", "Cluster"),
-    expand = c(0.15, 0.15)
+    labels = NULL,
+    expand = c(0.03, 0.03)
   ) +
   scale_fill_manual(
-    values = c(cim_colours, cluster_colours),
+    values = c(cim_colours, cluster_colours, stratum_colours),
     guide  = "none"
   ) +
-  labs(
-    title    = "NKI-SMC CIM State to Cluster Assignment",
-    subtitle = paste0(
-      "Fun-CIM: C1 + C3  |  Dys-CIM: C2  |  Total n = ",
-      nrow(clustered_df)
-    ),
-    caption = "k = 3 clusters"
-  ) +
-  theme_minimal(base_size = 12) +
+  labs(title = NULL, subtitle = NULL, caption = NULL) +
+  theme_minimal(base_size = 8) +
   theme(
     panel.grid    = element_blank(),
-    axis.text.y   = element_blank(),
+    axis.text     = element_blank(),
     axis.ticks    = element_blank(),
     axis.title    = element_blank(),
-    plot.title    = element_text(face = "bold", size = 13),
-    plot.subtitle = element_text(size = 10, colour = "grey40"),
-    plot.caption  = element_text(size = 9,  colour = "grey50")
+    plot.margin   = margin(2, 2, 2, 2)
   )
 
 # -----------------------------------------------------------------------------
 # 21e. SAVE SANKEY OUTPUTS
 # -----------------------------------------------------------------------------
 svg_sankey <- file.path(output_dir, "nki_smc_sankey.svg")
-ggsave(svg_sankey, sankey_plot, device = "svg", width = 6, height = 6, units = "in")
-cat("Sankey plot saved:", svg_sankey, "\n")
+ggsave(
+  svg_sankey,
+  sankey_plot,
+  device = "svg",
+  width = 4.34,
+  height = 2.51,
+  units = "in",
+  bg = "white"
+)
+cat("Sankey SVG saved:", svg_sankey, "\n")
+
+png_sankey <- file.path(output_dir, "nki_smc_sankey.png")
+ggsave(
+  png_sankey,
+  sankey_plot,
+  device = "png",
+  width = 4.34,
+  height = 2.51,
+  units = "in",
+  dpi = 600,
+  bg = "white"
+)
+cat("Sankey high-resolution PNG saved:", png_sankey, "\n")
 
 csv_sankey <- file.path(output_dir, "nki_smc_sankey_counts.csv")
 fwrite(sankey_df %>% select(cim_state, cluster_label, n), csv_sankey)
@@ -674,6 +826,13 @@ cat("  nki_smc_combine_clustered_plot_df.csv\n")
 cat("  nki_smc_venn_diagram.svg\n")
 cat("  venn_membership_full.csv\n")
 cat("  venn_gene_sets.csv\n")
+cat("  nki_smc_venn_global_DE.png\n")
+cat("  nki_smc_venn_funcim_vs_dyscim.png\n")
+cat("  nki_smc_venn_dyscim_specificity.png\n")
+cat("  nki_smc_venn_cluster_positive_any_comparison.svg\n")
+cat("  nki_smc_venn_cluster_positive_any_comparison.png\n")
+cat("  venn_cluster_positive_any_comparison_membership.csv\n")
 cat("  nki_smc_sankey.svg\n")
+cat("  nki_smc_sankey.png\n")
 cat("  nki_smc_sankey_counts.csv\n")
 cat("============================================================\n")
