@@ -4,7 +4,7 @@
 script_dir <- "D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/cimic_releases/v1"
 input_csv  <- "D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/oncoimmunology_paper/Datasets/NKI_SMC/nki_smc_combine_initial_clustering_mat.csv"
 output_dir <- "D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/oncoimmunology_paper/Results/nki_smc_cimic_results"
-variant_script <- "CIMIC_limma_1.0.0.R"
+variant_script <- "CIMIC_1.0.0.R"
 
 
 
@@ -27,7 +27,12 @@ cat(sprintf("input: %d samples x %d genes\n", nrow(clustering_matrix), ncol(clus
 source(file.path(script_dir, variant_script))
 
 res <- CIMIC(
-  clustering_matrix = clustering_matrix, all_gene_sets = NULL,
+  clustering_matrix = clustering_matrix,
+  # One sample per patient (36 unique ids, NKI numeric + SMC OB_), so there is no
+  # replicate structure to model: every sample is independent. With NULL the fit
+  # is numerically identical to plain unblocked limma (CIMIC_limma_1.0.0.R).
+  block_metadata = NULL,
+  all_gene_sets = NULL,
   clustering_alg = clustering_alg, max_k = max_k, CCP_iter = CCP_iter,
   adj_pval_thresh = adj_pval_thresh, max_pipeline_iter = max_pipeline_iter,
   seed = seedval, filter_approach = filter_approach, verbose = TRUE, working_dir = output_dir

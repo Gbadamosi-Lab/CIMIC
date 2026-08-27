@@ -1,25 +1,60 @@
-#' CIMIC pipeline (REPLICATE-AWARE LIMMA variant of CIMIC_streamlined.R)
+#' CIMIC -- Consensus Immune-Metabolic / Iterative Clustering pipeline, v1.0.0
 #' -------------------------------------------------------------------------
-#' For REPLICATE-LEVEL cell-line data. Same pipeline as CIMIC_limma.R, but the
-#' feature-selection SWAP POINT uses limma's duplicateCorrelation + a cell-line
-#' blocking factor, so replicates are neither averaged away (loses n) nor
-#' treated as independent (pseudoreplication) -- the within-cell-line
-#' correlation is modelled explicitly as a random block effect. Run this on the
-#' replicate matrices (tnbc_cl_<drug>_initial_clustering_mat.csv), NOT the
-#' averaged ones. See the SWAP POINT function for details.
+#' Consensus clustering with iterative feature refinement: embed (PaCMAP) ->
+#' consensus-cluster (ConsensusClusterPlus) -> pick k by PAC/silhouette/consensus
+#' rank -> test genes -> keep the survivors -> repeat to a fixed point -> final
+#' clustering, tables and figures.
 #'
-#' The rest of this file is identical to CIMIC_limma.R:
-#' features are ranked by a moderated linear model fit across ALL genes
-#' at once (limma) rather than gene-by-gene Wilcoxon/Kruskal.
+#' Features are ranked by a moderated linear model fit across ALL genes at once
+#' (limma) rather than gene-by-gene Wilcoxon/Kruskal, and any replicate structure
+#' is modelled explicitly -- so THIS ONE FILE covers both patient-level data (one
+#' sample per subject) and replicate-level data (e.g. cell lines measured in
+#' triplicate), which would otherwise be pseudoreplication.
+#'
+#' QUICK START -- the only extra thing to decide is `block_metadata`: which rows
+#' are repeated measurements of the same cell line / subject.
+#'
+#'   source("CIMIC_1.0.0.R")
+#'
+#'   # (a) cell lines, 3 replicates each -> model the within-line correlation
+#'   res <- CIMIC(
+#'     clustering_matrix = mat,                       # samples x genes
+#'     block_metadata    = data.frame(sample_id = rownames(mat),
+#'                                    block     = cell_line_per_row),
+#'     clustering_alg = "hc", seed = 2026L, working_dir = out_dir)
+#'
+#'   # (b) patients, one sample each -> no replicate structure (the default)
+#'   res <- CIMIC(
+#'     clustering_matrix = mat, block_metadata = NULL,
+#'     clustering_alg = "hc", seed = 2026L, working_dir = out_dir)
+#'
+#' Case (a) uses limma's duplicateCorrelation with the block as a random effect,
+#' so replicates are neither averaged away (which loses n and the within-line
+#' variance) nor treated as independent.
+#'
+#' Case (b) is NUMERICALLY IDENTICAL to plain unblocked limma -- with one sample
+#' per block duplicateCorrelation is skipped entirely and the fit is lmFit/eBayes.
+#' Verified against the earlier plain-limma release (CIMIC_limma_1.0.0.R): same
+#' p-values, same selected genes, same `test` label. So patient analyses are
+#' unaffected by moving to this file.
+#'
+#' The resolved structure is printed once at the start of every run -- check that
+#' block count before trusting the results. `block_metadata = "auto"` will guess
+#' the block from the sample-ID suffix, but declaring it is safer and is what the
+#' published runners do.
+#'
+#' The moderated model at the feature-selection step:
 #'
 #'   design = model.matrix(~ cluster)  (cluster = consensus assignment)
 #'   fit    = eBayes(lmFit(t(expr), design), robust = TRUE, trend = TRUE)
 #'   2 groups   -> moderated t  : p = P.Value,  effect_size = |t|,  adj = BH adj.P.Val
 #'   >=3 groups -> moderated F  : p = P.Value,  effect_size = F,    adj = BH adj.P.Val
 #'
+#' (With a replicate structure, lmFit additionally takes block = and
+#' correlation = duplicateCorrelation(...)$consensus.correlation.)
+#'
 #' limma's adj.P.Val (BH) IS the FDR used by the shared downstream filter
-#' (p<=0.05 & adj<=thresh). Everything else (convergence, clustering, plotting)
-#' is unchanged and shared with the streamlined version.
+#' (p<=0.05 & adj<=thresh).
 #'
 #' NOTE ON OUTPUT (verified): topTable(coef = cluster terms, sort.by="none")
 #' returns one row per gene with columns t/logFC (2-grp) or F (multi-grp) plus
@@ -357,6 +392,203 @@ setup_conda <- function(env_name = "pacmap_env") {
 # =========================================================================
 # SWAP POINT: per-gene feature test
 # =========================================================================
+#' Resolve the duplicateCorrelation blocking factor from a metadata table.
+#' -------------------------------------------------------------------------
+#' The "block" is the unit the replicates are nested in (the cell line). Hand it
+#' to CIMIC() as a data.frame with one row per sample:
+#'
+#'   block_metadata <- data.frame(
+#'     sample_id = c("delta_BT549_EPI_R1", "delta_BT549_EPI_R2", "delta_DU4475_EPI_R1", ...),
+#'     block     = c("BT549",              "BT549",              "DU4475",             ...))
+#'
+#'   CIMIC(clustering_matrix = mat, block_metadata = block_metadata, ...)
+#'
+#' Accepted forms for `block_metadata`:
+#'   data.frame    one sample-id column + one block column (extra columns fine)
+#'   CSV path      ".../tnbc_cl_epi_replicate_metadata.csv", read with read.csv
+#'   named vector  c(delta_BT549_EPI_R1 = "BT549", delta_BT549_EPI_R2 = "BT549", ...)
+#'   NULL          NO replicate structure -- every sample independent (default)
+#'   "auto"        derive the block from the sample IDs (.cimic_block_from_ids)
+#' (NULL and "auto" are handled by .cimic_block_factor(), not here.)
+#'
+#' Columns are found by name first -- sample id from sample_id/sample/id/... and
+#' block from block/base_id/cell_line/subject/... (case-insensitive) -- and, for
+#' a plain 2-column table, positionally (first = sample id, second = block). So
+#' both of these just work, no configuration:
+#'
+#'   data.frame(sample_id = ids, base_id = lines)     # detected by name
+#'   data.frame(my_samples = ids, my_lines = lines)   # detected positionally
+#'
+#' Rows are matched to the expression-matrix rownames by the sample-id column, so
+#' metadata row order and extra rows/columns are irrelevant. A sample missing
+#' from the metadata is a HARD ERROR, never a silently mis-blocked model.
+#'
+#' @param sample_ids       rownames of the expression matrix, in matrix order
+#' @param block_metadata   data.frame / CSV path / named vector, or NULL
+#' @return character vector of block labels aligned to `sample_ids`, or NULL if
+#'   `block_metadata` was NULL (caller then uses the sample-ID convention)
+.cimic_resolve_block <- function(sample_ids, block_metadata = NULL) {
+  meta <- block_metadata
+  if (is.null(meta)) return(NULL)
+  if (is.null(sample_ids)) {
+    stop("`block_metadata` was supplied but the expression matrix has no rownames, ",
+         "so its rows cannot be matched to the metadata.", call. = FALSE)
+  }
+
+  if (is.character(meta) && length(meta) == 1L &&
+      grepl("\\.(csv|tsv|txt)$", meta, ignore.case = TRUE)) {
+    # a path-looking scalar is ALWAYS treated as a file, so a typo'd path reports
+    # "not found" instead of falling through and being read as a block vector
+    if (!file.exists(meta)) {
+      stop("`block_metadata` looks like a file path but does not exist: ", meta, call. = FALSE)
+    }
+    meta <- utils::read.csv(meta, check.names = FALSE, stringsAsFactors = FALSE)
+  } else if (is.atomic(meta) && !is.matrix(meta)) {
+    # already a per-sample block vector: keyed by sample id, or in matrix order
+    if (!is.null(names(meta))) {
+      missing_ids <- setdiff(sample_ids, names(meta))
+      if (length(missing_ids)) {
+        stop("`block_metadata` is missing ", length(missing_ids), " sample(s), e.g. '",
+             missing_ids[1], "'.", call. = FALSE)
+      }
+      return(as.character(meta[sample_ids]))
+    }
+    if (length(meta) != length(sample_ids)) {
+      stop("An unnamed `block_metadata` vector must have one entry per sample (got ",
+           length(meta), " for ", length(sample_ids), " samples). Use a named vector or a ",
+           "data.frame if the order is not guaranteed.", call. = FALSE)
+    }
+    return(as.character(meta))
+  }
+
+  meta <- as.data.frame(meta, check.names = FALSE, stringsAsFactors = FALSE)
+  if (ncol(meta) < 2L) {
+    stop("`block_metadata` needs at least 2 columns (sample id + block); got ",
+         ncol(meta), ".", call. = FALSE)
+  }
+  by_name <- function(candidates) {
+    hits <- names(meta)[stats::na.omit(match(candidates, tolower(names(meta))))]
+    if (length(hits)) hits[1] else NA_character_
+  }
+  sid_col <- by_name(c("sample_id", "sample", "sample_name", "samples", "id", "rowname", "row_name"))
+  blk_col <- by_name(c("block", "base_id", "cell_line", "cellline", "cell_line_id",
+                       "subject", "patient", "donor", "replicate_group"))
+  # a plain 2-column table needs no recognised names: first = sample id, second = block
+  if (is.na(sid_col) && ncol(meta) == 2L) sid_col <- names(meta)[1]
+  if (is.na(blk_col) && ncol(meta) == 2L) blk_col <- setdiff(names(meta)[1:2], sid_col)[1]
+  if (is.na(sid_col) || is.na(blk_col) || identical(sid_col, blk_col)) {
+    stop("Could not work out which columns of `block_metadata` hold the sample id and the ",
+         "block. Columns present: ", paste(names(meta), collapse = ", "),
+         ". Either pass a 2-column data.frame (sample id first, block second) or name them ",
+         "'sample_id' and 'block'.", call. = FALSE)
+  }
+
+  meta_ids <- as.character(meta[[sid_col]])
+  idx <- match(sample_ids, meta_ids)
+  if (anyNA(idx)) {
+    # show both sides: the usual cause is a naming-convention drift between the
+    # matrix and the metadata (e.g. delta_BT549_EPI_R1 vs delta_BT549_EPIRUBICIN_1)
+    stop("`block_metadata` (column '", sid_col, "') has no row for ", sum(is.na(idx)),
+         " of ", length(sample_ids), " sample(s).\n  matrix rownames: ",
+         paste(head(sample_ids[is.na(idx)], 3), collapse = ", "),
+         "\n  metadata ids   : ", paste(head(meta_ids, 3), collapse = ", "),
+         "\n  The sample ids must match exactly; fix the metadata (or the matrix rownames) so ",
+         "they use the same naming convention.", call. = FALSE)
+  }
+  # `match` silently takes the FIRST hit, so duplicates must be checked against the
+  # metadata itself, not against the matched (by construction unique) subset
+  dup_ids <- intersect(unique(meta_ids[duplicated(meta_ids)]), sample_ids)
+  if (length(dup_ids)) {
+    stop("`block_metadata` column '", sid_col, "' has ", length(dup_ids),
+         " duplicated sample id(s), e.g. '", dup_ids[1],
+         "'; the block for those samples is ambiguous.", call. = FALSE)
+  }
+  block <- as.character(meta[[blk_col]])[idx]
+  if (anyNA(block) || any(!nzchar(trimws(block)))) {
+    stop("`block_metadata` column '", blk_col, "' has missing/blank block labels for ",
+         "some of the samples being analysed.", call. = FALSE)
+  }
+  block
+}
+
+#' Fallback when no `block_metadata` is given: derive the block from the sample
+#' IDs by stripping a trailing replicate suffix ('_1', '_R1', '_rep1'), e.g.
+#'   delta_BT549_EPI_R1       -> delta_BT549_EPI
+#'   delta_BT549_EPIRUBICIN_1 -> delta_BT549_EPIRUBICIN
+#' BUGFIX: the original pattern was "_[0-9]+$", which does NOT match the "_R<n>"
+#' form used by the release matrices -- every block came back a singleton and the
+#' duplicateCorrelation model silently collapsed to an unblocked fit.
+.cimic_block_from_ids <- function(sample_ids) {
+  if (is.null(sample_ids)) {
+    stop("Cannot determine the replicate structure: the expression matrix has no rownames ",
+         "and no `block_metadata` was supplied.", call. = FALSE)
+  }
+  sub("_(R|r|rep|Rep|REP)?[0-9]+$", "", sample_ids)
+}
+
+#' Turn the user's `block_metadata` argument into the final block vector.
+#' -------------------------------------------------------------------------
+#' This is the ONE place the three input modes are interpreted, so CIMIC() and a
+#' standalone cimic_select_features() call can never disagree:
+#'
+#'   NULL      -> no replicate structure: every sample is its own block. limma
+#'                then sets the intrablock correlation to 0 and the fit is
+#'                NUMERICALLY IDENTICAL to unblocked limma (verified: same
+#'                p-values, same selected genes). This is the safe default and
+#'                is what patient data (one sample per subject) wants.
+#'   "auto"    -> derive the block from the sample IDs by stripping a trailing
+#'                '_1' / '_R1' / '_rep1'. Convenient, but it infers a statistical
+#'                model from a naming convention, so it is OPT-IN and always
+#'                reports the block table it produced. Check that table.
+#'   metadata  -> data.frame / CSV path / named vector, see .cimic_resolve_block()
+#'
+#' @return list(block = character vector aligned to sample_ids, source = label)
+.cimic_block_factor <- function(sample_ids, block_metadata = NULL) {
+  if (is.null(sample_ids)) {
+    stop("The expression matrix has no rownames, so samples cannot be assigned to blocks.",
+         call. = FALSE)
+  }
+  if (is.null(block_metadata)) {
+    return(list(block = as.character(sample_ids),
+                source = "none declared - every sample independent"))
+  }
+  if (is.character(block_metadata) && length(block_metadata) == 1L &&
+      identical(tolower(block_metadata), "auto")) {
+    return(list(block = .cimic_block_from_ids(sample_ids),
+                source = "auto-derived from sample IDs"))
+  }
+  list(block = .cimic_resolve_block(sample_ids, block_metadata),
+       source = "declared in block_metadata")
+}
+
+#' Report the resolved replicate structure ONCE, before the run starts.
+#' Called from CIMIC() so the user sees the block table up front instead of one
+#' message per gene set per iteration. Warns only when a block structure was
+#' ASKED for but came out degenerate -- an all-singleton factor is the intended,
+#' correct outcome when the user declared no replicates.
+.cimic_report_block <- function(block, source_label) {
+  sizes <- table(block)
+  degenerate <- length(sizes) == length(block)
+  if (degenerate && grepl("^none declared", source_label)) {
+    message(sprintf("Replicate structure: none declared - all %d samples treated as ",
+                    length(block)),
+            "independent (identical to unblocked limma). Pass block_metadata = ",
+            "<data.frame(sample_id, block)> if samples share a subject/cell line.")
+    return(invisible(block))
+  }
+  message(sprintf("Replicate structure (%s): %d block(s) over %d samples, block sizes %s.",
+                  source_label, length(sizes), length(block),
+                  if (length(unique(sizes)) == 1L) as.character(sizes[1])
+                  else paste(range(sizes), collapse = "-")))
+  if (degenerate) {
+    warning("Every block came out a singleton, so duplicateCorrelation has no replicate ",
+            "structure to model and the fit reduces to an unblocked one. If the samples ",
+            "really do share cell lines/subjects, the block labels are wrong - pass an ",
+            "explicit block_metadata table instead.", call. = FALSE, immediate. = TRUE)
+  }
+  invisible(block)
+}
+
 #' REPLICATE-AWARE LIMMA feature test (duplicateCorrelation + blocking).
 #' -------------------------------------------------------------------------
 #' For REPLICATE-LEVEL cell-line data: instead of averaging replicates first
@@ -365,7 +597,8 @@ setup_conda <- function(env_name = "pacmap_env") {
 #' linear model on ALL replicate samples while modelling the within-cell-line
 #' correlation as a random block effect:
 #'
-#'   block  = cell line  (derived from the sample IDs: strip the trailing _<rep>)
+#'   block  = cell line  (from the METADATA table, see .cimic_resolve_block();
+#'            legacy fallback = sample ID minus a trailing _<rep>)
 #'   corr   = duplicateCorrelation(Y, design, block)$consensus.correlation
 #'   fit    = eBayes(lmFit(Y, design, block, correlation = corr),
 #'                   robust = TRUE, trend = TRUE)
@@ -379,39 +612,67 @@ setup_conda <- function(env_name = "pacmap_env") {
 #' Intended for the REPLICATE matrices (tnbc_cl_<drug>_initial_clustering_mat.csv,
 #' IDs like delta_<CELLLINE>_<DRUG>_<rep>), not the averaged ones.
 #'
+#' With NO replicate structure (`block_metadata = NULL`, every sample its own
+#' block) limma sets the intrablock correlation to 0 and this returns EXACTLY the
+#' plain-limma result -- so this one test serves patient and cell-line data alike.
+#'
 #' @param expr_mat  samples x genes numeric matrix; rownames are replicate IDs
 #' @param clusters  cluster assignment per replicate (aligned to rows of expr_mat)
+#' @param block_metadata  replicate structure: data.frame (sample id + block),
+#'   CSV path, named vector, "auto", or NULL for none -- see .cimic_block_factor().
+#'   CIMIC() resolves it once and passes it down, so this is normally only set by
+#'   hand when calling the test directly.
 #' @return data.frame(gene_id, effect_size, p_value, adj_p_value, test)
-cimic_select_features <- function(expr_mat, clusters, adj_pval_thresh) {
+cimic_select_features <- function(expr_mat, clusters, adj_pval_thresh,
+                                 block_metadata = NULL) {
   genes   <- colnames(expr_mat)
   cluster <- as.factor(clusters)
-  block   <- sub("_[0-9]+$", "", rownames(expr_mat))   # cell line = ID minus trailing _<rep>
   na_df <- data.frame(gene_id = genes, effect_size = NA_real_, p_value = NA_real_,
                       adj_p_value = NA_real_, test = "NA", stringsAsFactors = FALSE)
   if (nlevels(cluster) < 2) return(na_df)
 
+  # ---- blocking factor (NULL = none, "auto" = from IDs, else metadata) ----
+  # CIMIC() resolves and reports this once up front and passes the result down,
+  # so nothing is printed here on a pipeline run.
+  block <- .cimic_block_factor(rownames(expr_mat), block_metadata)$block
+
   has_replication <- length(unique(block)) < length(block)
-  if (!has_replication)
-    message("No replicate structure detected in row IDs; duplicateCorrelation will be near-degenerate.")
 
   tryCatch({
     Y      <- t(expr_mat)                                # limma wants genes x samples
     design <- model.matrix(~ cluster)
-    # 1) estimate the consensus within-cell-line correlation, then 2) refit using it
-    dc  <- limma::duplicateCorrelation(Y, design, block = block)
-    fit <- limma::lmFit(Y, design, block = block, correlation = dc$consensus.correlation)
-    # robust + trend empirical-Bayes moderation (see CIMIC_limma.R for rationale)
+    if (has_replication) {
+      # 1) estimate the consensus within-block correlation, then 2) refit using it
+      dc  <- limma::duplicateCorrelation(Y, design, block = block)
+      fit <- limma::lmFit(Y, design, block = block, correlation = dc$consensus.correlation)
+      prefix <- "limma_dupcor_"
+    } else {
+      # No replicate structure (one sample per block). limma would set the
+      # intrablock correlation to 0 here, which makes the blocked fit reduce
+      # EXACTLY to the unblocked one -- so skip duplicateCorrelation entirely:
+      # it is costly over ~20k genes, warns on every call, and cannot change the
+      # answer. Keeping the plain-limma `test` label also means patient results
+      # stay byte-identical to CIMIC_limma_1.0.0.R output.
+      fit <- limma::lmFit(Y, design)
+      prefix <- "limma_"
+    }
+    # robust = TRUE: robust empirical-Bayes prior (Phipson et al. 2016) so a few
+    # hypervariable genes don't distort the shared variance prior.
+    # trend  = TRUE: allow an intensity-dependent (mean-variance) prior trend.
+    # Set either to FALSE to disable.
     fit <- limma::eBayes(fit, robust = TRUE, trend = TRUE)
     coefs <- grep("^cluster", colnames(design), value = TRUE)
     tt <- limma::topTable(fit, coef = coefs, number = Inf, sort.by = "none")[genes, , drop = FALSE]
     if (nlevels(cluster) == 2) {
       data.frame(gene_id = genes, effect_size = abs(tt$t), p_value = tt$P.Value,
-                 adj_p_value = tt$adj.P.Val, test = "limma_dupcor_2grp(mod_t)", stringsAsFactors = FALSE)
+                 adj_p_value = tt$adj.P.Val, test = paste0(prefix, "2grp(mod_t)"),
+                 stringsAsFactors = FALSE)
     } else {
       data.frame(gene_id = genes, effect_size = tt$F, p_value = tt$P.Value,
-                 adj_p_value = tt$adj.P.Val, test = "limma_dupcor_multi(mod_F)", stringsAsFactors = FALSE)
+                 adj_p_value = tt$adj.P.Val, test = paste0(prefix, "multi(mod_F)"),
+                 stringsAsFactors = FALSE)
     }
-  }, error = function(e) { message("replicate-limma (duplicateCorrelation) failed: ", conditionMessage(e)); na_df })
+  }, error = function(e) { message("replicate-limma feature test failed: ", conditionMessage(e)); na_df })
 }
 
 
@@ -422,10 +683,13 @@ cimic_select_features <- function(expr_mat, clusters, adj_pval_thresh) {
 #'   by the non-immediate-convergence-to-zero revert check. (BUGFIX #1: app_one
 #'   originally passed `length(gene_set_i)` = 1, so its revert branch never fired.)
 #' @param select_fn       feature-test function (see SWAP POINT).
+#' @param block_metadata  resolved replicate structure, passed straight to
+#'   `select_fn` when that function accepts it (NULL for tests that don't).
 #' @return list(final, details, iter_log, converged_empty)
 .refine_gene_set <- function(seed_genes, label, universe_size, clustering_matrix, pacmap,
                              pm_defaults, max_k, CCP_iter, clustering_alg, clustering_metrics,
-                             adj_pval_thresh, max_pipeline_iter, select_fn, verbose) {
+                             adj_pval_thresh, max_pipeline_iter, select_fn, verbose,
+                             block_metadata = NULL) {
   working_max_k <- max_k
   iterated_final_gene_set <- seed_genes
   gene_set_check_1 <- 0; gene_set_check_2 <- length(iterated_final_gene_set); n <- 0
@@ -490,8 +754,14 @@ cimic_select_features <- function(expr_mat, clusters, adj_pval_thresh) {
                              iterated_final_gene_set, clustering_metrics, verbose)
 
     # --- Feature selection (SWAP POINT) ---
+    # Only the replicate-aware test takes `block_metadata`; the classic/adaptive/
+    # plain-limma tests keep the 3-argument signature, so pass it only if accepted.
     expr_mat <- clustering_matrix[, iterated_final_gene_set, drop = FALSE]
-    feat_df_full <- select_fn(expr_mat, mk$consensus_clusters, adj_pval_thresh)
+    feat_df_full <- if ("block_metadata" %in% names(formals(select_fn))) {
+      select_fn(expr_mat, mk$consensus_clusters, adj_pval_thresh, block_metadata = block_metadata)
+    } else {
+      select_fn(expr_mat, mk$consensus_clusters, adj_pval_thresh)
+    }
 
     # --- FDR threshold filter (shared by all test strategies) ---
     feat_df <- feat_df_full[!is.na(feat_df_full$p_value) &
@@ -846,8 +1116,24 @@ dir.create(results_dir, recursive = TRUE)
 # =========================================================================
 # Main function
 # =========================================================================
+#' @param block_metadata  REPLICATE STRUCTURE: which rows of `clustering_matrix`
+#'   are repeated measurements of the same cell line / subject.
+#'
+#'     NULL (default)  no replicates -- every sample independent. Identical to
+#'                     unblocked limma, so this is what patient data wants.
+#'     data.frame      data.frame(sample_id = rownames(mat), block = cell_line)
+#'     CSV path        a 2-column csv with the same two fields
+#'     named vector    c(delta_BT549_EPI_R1 = "BT549", ...)
+#'     "auto"          derive the block by stripping a trailing '_1'/'_R1'/'_rep1'
+#'                     from the sample IDs (convenience; check the printed table)
+#'
+#'   Column names are auto-detected, and a plain 2-column table is read
+#'   positionally (sample id first, block second), so no configuration is needed.
+#'   The resolved structure is printed once at the start of the run; if you asked
+#'   for blocking and it came out all-singletons, that warns loudly.
 CIMIC <- function(
     clustering_matrix,                       # rows: samples x cols: genes
+    block_metadata = NULL,                   # replicate structure (see above)
     all_gene_sets = NULL,
     remove_immune_variable_genes = TRUE,
     clustering_alg,
@@ -866,6 +1152,15 @@ CIMIC <- function(
     working_dir) {
 
   set.seed(2024L)
+
+  # ---- Replicate (blocking) structure: resolve and report ONCE, up front ----
+  # Done before conda/PaCMAP setup so a metadata/matrix mismatch fails in seconds
+  # rather than part-way through the run, and resolved here (not per gene set) so
+  # the user gets one block table instead of one message per iteration.
+  bf <- .cimic_block_factor(rownames(clustering_matrix), block_metadata)
+  block_vec <- setNames(bf$block, rownames(clustering_matrix))
+  .cimic_report_block(block_vec, bf$source)
+
   graphics.off()   # start from a clean graphics-device state (guards against a corrupted
                    # "invalid graphics state" carried over from a previous/aborted run)
   pacmap <- setup_conda(env_name = "pacmap_env")
@@ -975,7 +1270,8 @@ CIMIC <- function(
   common <- list(clustering_matrix = clustering_matrix, pacmap = pacmap, pm_defaults = pm_defaults,
                  max_k = max_k, CCP_iter = CCP_iter, clustering_alg = clustering_alg,
                  clustering_metrics = clustering_metrics, adj_pval_thresh = adj_pval_thresh,
-                 max_pipeline_iter = max_pipeline_iter, select_fn = select_fn, verbose = verbose)
+                 max_pipeline_iter = max_pipeline_iter, select_fn = select_fn, verbose = verbose,
+                 block_metadata = block_vec)
   refine <- function(seed_genes, label, universe_size) {
     do.call(.refine_gene_set, c(list(seed_genes = seed_genes, label = label, universe_size = universe_size), common))
   }

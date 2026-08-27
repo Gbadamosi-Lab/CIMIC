@@ -5,7 +5,11 @@
 script_dir <- "D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/cimic_releases/v1"
 input_csv  <- "D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/oncoimmunology_paper/Datasets/TNBC_CL_Epirubicin/tnbc_cl_epi_initial_clustering_mat.csv"
 output_dir <- "D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/oncoimmunology_paper/Results/tnbc_cl_epirubicin_cimic_results"
-variant_script <- "CIMIC_limma_replicate_1.0.0.R"
+variant_script <- "CIMIC_1.0.0.R"
+
+# Replicate structure for the duplicateCorrelation blocking (sample_id -> base_id).
+# Two columns: every row of input_csv, mapped to the cell line it is a replicate of.
+block_meta_csv <- "D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/oncoimmunology_paper/Datasets/TNBC_CL_Epirubicin/tnbc_cl_epi_replicate_metadata.csv"
 
 
 
@@ -27,7 +31,9 @@ source(file.path(script_dir, variant_script))
 
 
 res <- CIMIC(
-  clustering_matrix = clustering_matrix, all_gene_sets = NULL,
+  clustering_matrix = clustering_matrix,
+  block_metadata = block_meta_csv,     # which rows are replicates of the same cell line
+  all_gene_sets = NULL,
   clustering_alg = clustering_alg, max_k = max_k, CCP_iter = CCP_iter,
   adj_pval_thresh = adj_pval_thresh, max_pipeline_iter = max_pipeline_iter,
   seed = seedval, filter_approach = filter_approach, verbose = TRUE, working_dir = output_dir
