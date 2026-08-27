@@ -1,7 +1,7 @@
 #' Run ONE CIMIC-LIMMA (moderated linear model feature selection) for NEO dataset.
 #' Standalone - run this by itself.
 #' -------------------------------------------------------------------------
-script_dir <- "D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/cimic_releases"
+script_dir <- "D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/cimic_releases/v1"
 input_csv  <- "D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/oncoimmunology_paper/Datasets/NEO/neo_initial_clustering_mat.csv"
 output_dir <- "D:/OneDrive - University of Florida/Gbadamosi Lab/Mohammed Gbadamosi/Gbadamosi_Lab_GitHub/CIMIC/oncoimmunology_paper/Results/neo_cimic_results"
 variant_script <- "CIMIC_limma_1.0.0.R"
@@ -24,7 +24,7 @@ cat(sprintf("input: %d samples x %d genes\n", nrow(clustering_matrix), ncol(clus
 
 source(file.path(script_dir, variant_script))
 
-res <- CIM_feature_selection_by_gene_set_pacmap(
+res <- CIMIC(
   clustering_matrix = clustering_matrix, all_gene_sets = NULL,
   clustering_alg = clustering_alg, max_k = max_k, CCP_iter = CCP_iter,
   adj_pval_thresh = adj_pval_thresh, max_pipeline_iter = max_pipeline_iter,
