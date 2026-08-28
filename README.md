@@ -6,29 +6,46 @@ transcriptional trajectories. It was developed and validated in neoadjuvant
 chemotherapy for breast cancer.
 
 The pipeline operates on within-patient delta gene expression
-(ΔGE = post-treatment log₂[TPM+1] − pre-treatment log₂[TPM+1]) across 3,179 genes
+(ΔGE = post-treatment log₂[TPM+1] − pre-treatment log₂[TPM+1]) across 3,189 genes
 spanning 19 CIM-related pathways, capturing treatment-induced transcriptional
 responses while controlling for interpatient baseline differences.
 
 This repository contains the CIMIC source releases plus the data and code used to
 produce the figures in the original *Oncoimmunology* publication.
 
-**Contents:** [Quick start](#quick-start) · [Requirements](#requirements) ·
-[Input data](#input-data) · [Replicate structure](#replicate-structure-block_metadata) ·
-[Usage](#usage) · [How it works](#how-it-works) ·
+**Contents:** [Quick start](#quick-start) · [The two modes](#the-two-modes) ·
+[Requirements](#requirements) · [Input data](#input-data) ·
+[Replicate structure](#replicate-structure-block_metadata) · [Usage](#usage) ·
+[How it works](#how-it-works) ·
 [Interpreting output](#interpreting-cimic-output) ·
-[Worked examples](#worked-examples) · [Output files](#output-files)
+[Worked examples](#worked-examples) · [Output files](#output-files) ·
+[Troubleshooting](#troubleshooting) · [Release notes](#release-notes--v100)
 
 ---
 
 ## Quick start
 
+There is **one** release, `cimic_releases/v1/CIMIC_1.0.0.R`, which runs in one of
+two modes. The mode is chosen entirely by the `block_metadata` argument.
+
 ```r
 source("cimic_releases/v1/CIMIC_1.0.0.R")   # installs missing packages on first run
 
+# --- Independent-samples mode: one measurement per patient/subject -------------
 results <- CIMIC(
   clustering_matrix = my_delta_ge_matrix,   # samples x genes, rownames = sample IDs
-  block_metadata    = NULL,                 # NULL = no replicates (see below)
+  block_metadata    = NULL,                 # <- no replicate structure
+  clustering_alg    = "hc",
+  seed              = 2026L,
+  working_dir       = "path/to/output"
+)
+
+# --- Replicate-aware mode: several replicates per cell line/subject ------------
+results <- CIMIC(
+  clustering_matrix = my_replicate_delta_ge_matrix,   # one row per replicate
+  block_metadata    = data.frame(                     # <- declare the structure
+                        sample_id = rownames(my_replicate_delta_ge_matrix),
+                        block     = cell_line_per_row),
   clustering_alg    = "hc",
   seed              = 2026L,
   working_dir       = "path/to/output"
@@ -38,12 +55,56 @@ results <- CIMIC(
 `clustering_matrix`, `clustering_alg`, `seed`, and `working_dir` are required;
 everything else has a default. See [Usage](#usage) for the full argument list.
 
-### Which release?
+---
+
+## The two modes
+
+Both modes share the entire pipeline — embedding, consensus clustering, *k*
+selection, iterative refinement, outputs. They differ only in how the per-gene
+model treats samples that are repeated measurements of the same biological unit.
+
+| | **Independent-samples mode** | **Replicate-aware mode** |
+|---|---|---|
+| **Set** | `block_metadata = NULL` *(default)* | `block_metadata = <table>` |
+| **Assumes** | every row is an independent observation | rows within a block are correlated |
+| **Model** | `lmFit` → `eBayes` (moderated *t* / *F*) | `duplicateCorrelation` → `lmFit(block=, correlation=)` → `eBayes` |
+| **`test` label in output** | `limma_2grp(mod_t)` / `limma_multi(mod_F)` | `limma_dupcor_2grp(mod_t)` / `limma_dupcor_multi(mod_F)` |
+| **Use for** | patient cohorts with one sample each | cell lines in triplicate; repeated biopsies or timepoints per patient |
+
+### Choosing a mode
+
+The question is not "patients or cell lines" — it is **how many rows come from
+the same biological unit**:
+
+| Your design | Mode | `block` is |
+|---|---|---|
+| One pre/post pair per patient | Independent-samples | — |
+| 9 cell lines × 3 replicates | Replicate-aware | cell line |
+| 20 patients × 2 timepoints each | Replicate-aware | patient |
+| One sample per donor, several donors | Independent-samples | — |
+| Technical replicates of the same library | Replicate-aware | library/sample |
+
+If you are unsure, count: if no two rows share a unit, use independent-samples
+mode.
+
+> [!IMPORTANT]
+> Using replicate-aware mode on data with no replicates is **safe and gives the
+> identical answer** — with one sample per block, `duplicateCorrelation` is
+> skipped and the fit reduces exactly to unblocked limma. The reverse is not
+> safe: using independent-samples mode on replicate data is pseudoreplication and
+> will produce anticonservative p-values.
+
+### Relationship to the earlier release
 
 | Script | Status |
 |---|---|
-| `cimic_releases/v1/CIMIC_1.0.0.R` | **Current — use this.** Handles data with or without replicates. |
-| `cimic_releases/v1/CIMIC_limma_1.0.0.R` | *Superseded.* Earlier patient-only release, retained for provenance of published results. Reproduced exactly by `CIMIC_1.0.0.R` with `block_metadata = NULL`. |
+| `cimic_releases/v1/CIMIC_1.0.0.R` | **Current — use this.** Both modes in one file. |
+| `cimic_releases/v1/CIMIC_limma_1.0.0.R` | *Superseded.* Earlier patient-only release, retained for provenance of published results. |
+
+Independent-samples mode reproduces `CIMIC_limma_1.0.0.R` **exactly** — verified
+on the published cohorts at *k* = 2, 3 and 4: identical p-values, identical
+effect sizes, identical selected genes, and the same `test` label. Existing
+patient analyses therefore need no re-run when migrating to `CIMIC_1.0.0.R`.
 
 ---
 
@@ -108,6 +169,10 @@ repeated measurements of the same cell line or subject.**
 | One sample per patient/subject | `block_metadata = NULL` *(default)* |
 | Several replicates per cell line/subject | a table mapping sample → block |
 
+**A "block" is the unit that repeated measurements share** — a cell line, a
+patient, a donor, a library. It is *not* specific to cell lines; for a study with
+two biopsies per patient, the block is the patient.
+
 **Why it matters.** Replicates are neither averaged away (which loses *n* and the
 within-block variance) nor treated as independent (pseudoreplication). Instead
 the within-block correlation is estimated with limma's `duplicateCorrelation` and
@@ -120,18 +185,36 @@ the fit reduces to plain unblocked limma — numerically identical to
 **Accepted forms:**
 
 ```r
-# data.frame (any column order; extra columns ignored)
+# 1. data.frame (any column order; extra columns ignored)
 block_metadata = data.frame(sample_id = rownames(mat), block = cell_line_per_row)
 
-# path to a two-column CSV
+# 2. path to a two-column CSV
 block_metadata = "path/to/replicate_metadata.csv"
 
-# named vector
-block_metadata = c(delta_BT549_EPI_R1 = "BT549", delta_BT549_EPI_R2 = "BT549", ...)
+# 3. named vector, sample id -> block
+block_metadata = c(delta_BT549_EPI_R1 = "BT549", delta_BT549_EPI_R2 = "BT549")
 
-# derive from a trailing "_1" / "_R1" / "_rep1" in the sample IDs (opt-in)
+# 4. NULL -> independent-samples mode (the default)
+block_metadata = NULL
+
+# 5. "auto" -> derive by stripping a trailing "_1" / "_R1" / "_rep1" from the IDs
 block_metadata = "auto"
 ```
+
+> [!CAUTION]
+> `"auto"` infers a statistical model from a naming convention, so it is opt-in
+> rather than the default. It is only as good as your IDs — it can fail in both
+> directions:
+>
+> | Sample IDs | `"auto"` gives | Correct? |
+> |---|---|---|
+> | `delta_BT549_EPI_R1` … (3 lines × 3) | 3 blocks of 3 | ✅ |
+> | `sample_1` … `sample_12` (12 independent) | **1 block of 12** | ❌ over-merged |
+> | `BT549-1`, `BT549-2`, … (dash, 2 reps × 2 lines) | **4 blocks of 1** | ❌ replicates missed |
+> | `BT549_A`, `BT549_B`, … (letter suffix) | **4 blocks of 1** | ❌ replicates missed |
+>
+> Always read the printed block table when using `"auto"`. Declaring the structure
+> explicitly (forms 1–3) is what the published runners do.
 
 A table looks like this — a shipped example is
 [tnbc_cl_epi_replicate_metadata.csv](oncoimmunology_paper/Datasets/TNBC_CL_Epirubicin/tnbc_cl_epi_replicate_metadata.csv):
@@ -150,26 +233,54 @@ Rows are matched to the matrix rownames by sample id, so row order and extra row
 or columns are irrelevant. **A sample missing from the table is a hard error**,
 never a silently mis-blocked model.
 
-Every run prints the resolved structure once before starting:
+### Verify the structure before trusting a run
+
+Every run prints the resolved structure once, before the (long) clustering starts:
 
 ```
+# replicate-aware mode
 Replicate structure (declared in block_metadata): 9 block(s) over 27 samples, block sizes 3.
+
+# independent-samples mode
+Replicate structure: none declared - all 36 samples treated as independent
+(identical to unblocked limma).
 ```
 
-**Check that line.** If it reports one block per sample when your samples do
-share cell lines, the block labels are wrong and the replicate model is doing
-nothing. `"auto"` additionally warns if it produces an all-singleton factor.
+**Read that line.** If it reports one block per sample when your samples really do
+share cell lines or subjects, the block labels are wrong and the replicate model
+is doing nothing. When you asked for blocking and the result is all singletons,
+CIMIC raises an immediate warning; a sample present in the matrix but missing from
+`block_metadata` is a hard error, so a mismatch fails in seconds rather than
+part-way through a run.
+
+### What blocking is *not* for
+
+`duplicateCorrelation` is designed for repeated measurements of the same unit —
+many small blocks. Do **not** use `block_metadata` to absorb batch, site, or
+cohort effects (e.g. a two-cohort merged dataset): a handful of very large blocks
+is not the intended regime, and a fixed-effect covariate in the design is the
+standard way to handle batch. Blocking answers "which rows are the same thing
+measured twice", not "which rows were processed together".
 
 ---
 
 ## Usage
 
+A full call with every argument shown explicitly. The **only** line that differs
+between the two modes is `block_metadata`.
+
+### Independent-samples mode
+
 ```r
 source("cimic_releases/v1/CIMIC_1.0.0.R")
 
+clustering_matrix <- as.matrix(read.csv(input_csv, row.names = 1, check.names = FALSE))
+storage.mode(clustering_matrix) <- "double"
+
 results <- CIMIC(
-  clustering_matrix  = my_delta_ge_matrix,
-  block_metadata     = NULL,
+  clustering_matrix  = clustering_matrix,     # samples x genes
+  block_metadata     = NULL,                  # <- one measurement per subject
+  all_gene_sets      = NULL,                  # NULL = the 19 default CIM pathways
   clustering_alg     = "hc",
   max_k              = 5,
   CCP_iter           = 5000,
@@ -178,8 +289,44 @@ results <- CIMIC(
   seed               = 2026L,
   clustering_metrics = c("pac", "silhouette_combined_avg", "item_cluster_consensus"),
   filter_approach    = c("app_one", "app_two", "app_three"),
+  verbose            = TRUE,
   working_dir        = "path/to/output"
 )
+saveRDS(results, file.path("path/to/output", "CIMIC_result.rds"))
+```
+
+### Replicate-aware mode
+
+```r
+source("cimic_releases/v1/CIMIC_1.0.0.R")
+
+clustering_matrix <- as.matrix(read.csv(input_csv, row.names = 1, check.names = FALSE))
+storage.mode(clustering_matrix) <- "double"
+
+# one row per replicate; block = the cell line each replicate came from
+block_metadata <- data.frame(
+  sample_id = rownames(clustering_matrix),
+  block     = my_cell_line_per_row,
+  stringsAsFactors = FALSE
+)
+table(block_metadata$block)                   # sanity-check before the long run
+
+results <- CIMIC(
+  clustering_matrix  = clustering_matrix,     # replicates x genes
+  block_metadata     = block_metadata,        # <- the only changed line
+  all_gene_sets      = NULL,
+  clustering_alg     = "hc",
+  max_k              = 5,
+  CCP_iter           = 5000,
+  adj_pval_thresh    = 0.05,
+  max_pipeline_iter  = 50,
+  seed               = 2026L,
+  clustering_metrics = c("pac", "silhouette_combined_avg", "item_cluster_consensus"),
+  filter_approach    = c("app_one", "app_two", "app_three"),
+  verbose            = TRUE,
+  working_dir        = "path/to/output"
+)
+saveRDS(results, file.path("path/to/output", "CIMIC_result.rds"))
 ```
 
 ### Arguments
@@ -218,24 +365,57 @@ is the only stochastic component you control — this was deliberate, so that
 embedding stability could be assessed independently (see the ARI robustness
 analysis in the manuscript).
 
+### Public functions
+
+Sourcing the release defines four public functions; everything else is internal
+and prefixed with a dot (`.cimic_resolve_block`, `.refine_gene_set`, …), which
+keeps it out of `ls()`. You should never need to call an internal helper — if a
+task seems to require one, it is a gap in the public API.
+
+| Function | Purpose |
+|---|---|
+| `CIMIC()` | The pipeline. The only function most users call. |
+| `cimic_select_features()` | The per-gene test; replaceable via `select_fn` (below) |
+| `setup_conda()` | PaCMAP / conda bootstrap, called automatically |
+| `get_stability_category()` | Maps a consensus score to a qualitative label |
+
 ### Custom statistical test
 
 The per-gene test is isolated in one function so it can be replaced without
-touching the pipeline. A replacement must accept
+touching the rest of the pipeline. A replacement must accept
 `(expr_mat, clusters, adj_pval_thresh)` and return one row per gene, **in the same
 order as `colnames(expr_mat)`**, with columns
 `gene_id`, `effect_size`, `p_value`, `adj_p_value`, `test`. Return results
 *unfiltered* — CIMIC applies the FDR threshold itself. Handle the
 fewer-than-two-clusters case and wrap the body in `tryCatch`; the function is
-called hundreds of times per run and an error aborts everything.
+called hundreds of times per run and an unhandled error aborts everything.
 
 ```r
-results <- CIMIC(..., select_fn = my_own_test)
+my_wilcox_test <- function(expr_mat, clusters, adj_pval_thresh) {
+  genes   <- colnames(expr_mat)
+  cluster <- as.factor(clusters)
+  na_df <- data.frame(gene_id = genes, effect_size = NA_real_, p_value = NA_real_,
+                      adj_p_value = NA_real_, test = "NA", stringsAsFactors = FALSE)
+  if (nlevels(cluster) < 2) return(na_df)          # required: CIMIC reaches this case
+
+  p <- apply(expr_mat, 2, function(g) tryCatch(
+    if (nlevels(cluster) == 2) stats::wilcox.test(g ~ cluster)$p.value
+    else stats::kruskal.test(g ~ cluster)$p.value,
+    error = function(e) NA_real_))
+  eff <- apply(expr_mat, 2, function(g) diff(range(tapply(g, cluster, median))))
+
+  data.frame(gene_id = genes, effect_size = as.numeric(eff), p_value = as.numeric(p),
+             adj_p_value = p.adjust(p, method = "BH"),
+             test = if (nlevels(cluster) == 2) "wilcox" else "kruskal",
+             stringsAsFactors = FALSE)
+}
+
+results <- CIMIC(..., select_fn = my_wilcox_test)
 ```
 
 Add a fourth argument named `block_metadata` if your test needs the replicate
-structure; CIMIC passes it only to functions that declare it, so three-argument
-tests keep working unchanged.
+structure. CIMIC passes it only to functions that declare it, so three-argument
+tests like the one above keep working unchanged.
 
 ### Return value
 
@@ -271,9 +451,12 @@ the 19 CIM pathways, the ΔGE matrix is:
    - 2 clusters → moderated *t*; effect size = |*t*|
    - ≥3 clusters → moderated *F*; effect size = *F*
    - Benjamini–Hochberg FDR; retained if *p* ≤ 0.05 **and** adj. *p* ≤ `adj_pval_thresh`
-   - With a declared replicate structure, `duplicateCorrelation` estimates the
+   - In **replicate-aware mode**, `duplicateCorrelation` estimates the
      within-block correlation first and `lmFit` receives it as a random block
-     effect before empirical-Bayes moderation
+     effect before empirical-Bayes moderation. In **independent-samples mode**
+     that step is skipped entirely
+
+   This step — and only this step — differs between the two modes.
 
 Steps 2–4 repeat until convergence — the surviving gene set stops changing —
 capped at `max_pipeline_iter`.
@@ -344,11 +527,11 @@ a validated finding.
 Three standalone scripts reproduce the manuscript analyses. Each is
 self-contained: open it, edit the paths at the top, run it.
 
-| Data type | Script | `block_metadata` |
-|---|---|---|
-| Patient cohort (36 samples) | [nki_smc_combine_cimic.R](oncoimmunology_paper/Datasets/NKI_SMC/nki_smc_combine_cimic.R) | `NULL` |
-| Patient cohort (19 samples) | [neo_cimic.R](oncoimmunology_paper/Datasets/NEO/neo_cimic.R) | `NULL` |
-| Cell lines (9 lines x 3 replicates) | [tnbc_cl_cimic.R](oncoimmunology_paper/Datasets/TNBC_CL_Epirubicin/tnbc_cl_cimic.R) | 2-column CSV |
+| Data type | Script | Mode | `block_metadata` |
+|---|---|---|---|
+| Patient cohort (36 samples) | [nki_smc_combine_cimic.R](oncoimmunology_paper/Datasets/NKI_SMC/nki_smc_combine_cimic.R) | Independent-samples | `NULL` |
+| Patient cohort (19 samples) | [neo_cimic.R](oncoimmunology_paper/Datasets/NEO/neo_cimic.R) | Independent-samples | `NULL` |
+| Cell lines (9 lines × 3 replicates) | [tnbc_cl_cimic.R](oncoimmunology_paper/Datasets/TNBC_CL_Epirubicin/tnbc_cl_cimic.R) | Replicate-aware | 2-column CSV |
 
 **Patient cohorts.** Combined NKI + SMC breast-cancer cohort (one pre/post pair
 per patient) and the NEO cohort. One measurement per patient, so
@@ -366,12 +549,13 @@ within-line correlation instead of treating replicates as independent.
 - Blocking: `tnbc_cl_epi_replicate_metadata.csv`
 - Output: `oncoimmunology_paper/Results/tnbc_cl_epirubicin_cimic_results/`
 
-**What differs between them.** All three source the same release and call `CIMIC()`
-with identical settings — `clustering_alg = "hc"`, `max_k = 5`,
-`CCP_iter = 5000`, `adj_pval_thresh = 0.05`, `max_pipeline_iter = 50`,
-`seed = 2026L`, all three approaches. The only substantive difference is
-`block_metadata`. That choice, driven purely by whether the data contain
-replicates, is the whole of what separates the analyses.
+**What differs between them.** All three source the same release, `CIMIC_1.0.0.R`,
+and call the same entry point, `CIMIC()`, with identical settings —
+`clustering_alg = "hc"`, `max_k = 5`, `CCP_iter = 5000`,
+`adj_pval_thresh = 0.05`, `max_pipeline_iter = 50`, `seed = 2026L`, all three
+approaches. The only substantive difference is `block_metadata`, i.e. the mode.
+That choice, driven purely by whether the data contain replicates, is the whole
+of what separates the analyses.
 
 Each script writes the full result object to `<output_dir>/CIMIC_result.rds`
 alongside the per-approach folders described below.
@@ -452,6 +636,31 @@ or let the pipeline install Miniconda when prompted.
 **Empty final gene set** — the FDR filter removed everything; relax
 `adj_pval_thresh`. On immediate convergence to zero CIMIC retains the top 10% of
 genes automatically and says so.
+
+---
+
+## Release notes — v1.0.0
+
+- **One release, two modes.** `CIMIC_1.0.0.R` replaces the previous pair of
+  scripts. Independent-samples mode reproduces `CIMIC_limma_1.0.0.R` exactly
+  (verified: identical p-values, effect sizes, selected genes and `test` label),
+  so migrating a patient analysis changes nothing.
+- **Replicate structure is now declared, not inferred.** It is passed as the
+  explicit `block_metadata` argument to `CIMIC()`. `NULL` means "no replicates",
+  and deriving blocks from sample-ID suffixes is opt-in via `"auto"`.
+- **`duplicateCorrelation` is skipped when there is no replication**, since limma
+  would set the intrablock correlation to zero anyway. This makes
+  independent-samples mode faster and keeps the plain-limma `test` label.
+- **The resolved block structure is reported once per run**, with a warning if
+  blocking was requested but produced an all-singleton factor.
+
+> [!IMPORTANT]
+> **If you produced replicate-level results with a pre-1.0.0 script, re-run them.**
+> Earlier versions derived the block by stripping a trailing `_<digits>` from the
+> sample ID, which does not match the `_R1` / `_R2` / `_R3` convention used by the
+> replicate matrices in this repository. Every block came out a singleton, so the
+> replicate model silently reduced to an unblocked fit. Patient-level results are
+> unaffected.
 
 ---
 
