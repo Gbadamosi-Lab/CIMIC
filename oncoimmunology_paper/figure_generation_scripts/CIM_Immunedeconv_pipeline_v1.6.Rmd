@@ -185,6 +185,7 @@ resolve_rmd_path <- function() {
   }
 
   return(NA_character_)
+
 }
 
 RMD_PATH <- resolve_rmd_path()
