@@ -654,13 +654,6 @@ genes automatically and says so.
 - **The resolved block structure is reported once per run**, with a warning if
   blocking was requested but produced an all-singleton factor.
 
-> [!IMPORTANT]
-> **If you produced replicate-level results with a pre-1.0.0 script, re-run them.**
-> Earlier versions derived the block by stripping a trailing `_<digits>` from the
-> sample ID, which does not match the `_R1` / `_R2` / `_R3` convention used by the
-> replicate matrices in this repository. Every block came out a singleton, so the
-> replicate model silently reduced to an unblocked fit. Patient-level results are
-> unaffected.
 
 ---
 
